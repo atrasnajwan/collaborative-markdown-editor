@@ -33,3 +33,7 @@ func (user *User) BeforeCreate(db *gorm.DB) (err error) {
 func (user *User) Deactivate(db *gorm.DB) error {
 	return db.Model(user).Update("is_active", false).Error
 }
+
+func (user *User) FindByEmail(db *gorm.DB) error {
+	return db.Where("email = ?", user.Email).First(&user).Error
+}
