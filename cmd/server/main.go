@@ -2,93 +2,82 @@ package main
 
 import (
 	"collaborative-markdown-editor/auth"
+	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/db"
 	"collaborative-markdown-editor/internal/user"
 	"collaborative-markdown-editor/redis"
+	"context"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
-	"golang.org/x/crypto/bcrypt"
 )
 
-type FormLogin struct {
-	Email    string `json:"email" binding:"required"`
-	Password string `json:"password" binding:"required"`
-}
-
-func init() {
-	if err := godotenv.Load("../../.env"); err != nil {
-		log.Fatal("Error loading .env file\n", err)
-	}
-}
-
 func main() {
-	database, _ := db.ConnectDb()
-	defer db.CloseDb(database)
-	db.Migrate(database)
+	// Load configuration
+	config.LoadConfig()
 
+	// Connect to database
+	db.ConnectDb()
+	defer db.CloseDb()
+
+	// Migrate database schema
+	db.Migrate()
+
+	// Seed database with initial data (for development)
+	db.SeedData()
+
+	// Initialize Redis
 	redis.InitRedis()
+
+	// Initialize user repository and service
+	userRepo := user.NewRepository(db.AppDb)
+	userService := user.NewService(userRepo)
+	userHandler := user.NewHandler(userService)
+
+	// Initialize Gin router
 	router := gin.Default()
 
-	router.POST("/login", func(ctx *gin.Context) {
-		var body FormLogin
-		if err := ctx.ShouldBind(&body); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
+	// User routes
+	router.POST("/register", userHandler.Register)
+	router.POST("/login", userHandler.Login)
+	router.DELETE("/logout", auth.AuthMiddleWare(), userHandler.Logout)
+	router.GET("/profile", auth.AuthMiddleWare(), userHandler.GetProfile)
+
+	// Server configuration
+	serverPort := config.AppConfig.ServerPort
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%s", serverPort),
+		Handler: router.Handler(),
+	}
+
+	// Start server
+	go func() {
+		log.Printf("Server listening on port %s", serverPort)
+		err := server.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed to start: %v", err)
 		}
+	}()
 
-		currentUser := &user.User{Email: body.Email, Password: body.Password}
+	// Graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down server...")
 
-		if err := currentUser.FindByEmail(database); err != nil {
-			log.Println(err)
-			ctx.JSON(http.StatusUnprocessableEntity, gin.H{"error": "User not found!"})
-			return
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-		// check password
-		err := bcrypt.CompareHashAndPassword([]byte(currentUser.PasswordHash), []byte(body.Password))
-		if err != nil {
-			// invalid password
-			ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Wrong Password"})
-			return
-		}
+	if err := server.Shutdown(ctx); err != nil {
+		log.Println("Server shutdown error:", err)
+	}
 
-		// generate JWT token
-		token, err := auth.GenerateJWT(currentUser.ID)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
-			return
-		}
-
-		// Store in Redis with expiration
-		redis.RedisClient.Set(redis.Ctx, token, "1", time.Hour * 24 * 3)
-
-		ctx.JSON(http.StatusOK, gin.H{"token": token})
-	})
-
-	router.DELETE("/logout", auth.AuthMiddleWare(), func(ctx *gin.Context) {
-		jwtToken, exists := ctx.Get("jwt_token")
-		if exists {
-			log.Println("delete jwt token")
-			redis.RedisClient.Del(redis.Ctx, jwtToken.(string))
-		}
-
-		log.Println("logout")
-	})
-
-	router.GET("/profile", auth.AuthMiddleWare(), func(ctx *gin.Context) {
-		log.Println(ctx.Get("current_user"))
-		// currentUser, _ := ctx.Get("current_user")
-
-		// user := currentUser.(*user.User)
-		// ctx.JSON(http.StatusOK, gin.H{
-		// 	"id": "test",
-		// 	// "name":  user.Name,
-		// })
-	})
-
-	router.Run(":8080")
+	<-ctx.Done()
+	log.Println("Server shutdown complete")
 }

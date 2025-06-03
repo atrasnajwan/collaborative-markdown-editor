@@ -1,31 +1,39 @@
 package db
 
 import (
+	"collaborative-markdown-editor/internal/config"
 	"fmt"
 	"log"
-	"os"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
-func ConnectDb() (*gorm.DB, error) {
-	fmt.Println(os.Getenv("PORT"))
-	dsn := fmt.Sprintf("host=%v user=%v password=%v dbname=%v port=%v sslmode=disable", os.Getenv("DB_HOST"), os.Getenv("DB_USER"), os.Getenv("DB_PASSWORD"), os.Getenv("DB_NAME"), os.Getenv("DB_PORT"))
+var AppDb *gorm.DB
+
+func ConnectDb() error {
+	dsn := fmt.Sprintf("host=%v user=%v password=%v dbname=%v port=%v sslmode=disable", 
+			config.AppConfig.DBHost,
+			config.AppConfig.DBUser,
+			config.AppConfig.DBPassword,
+			config.AppConfig.DBName,
+			config.AppConfig.DBPort,
+		)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 
 	if err != nil {
 		log.Fatalf("error connecting to db %v", err)
-		return nil, err
+		return err
 	}
-
-	fmt.Printf("Success connecting to db %v\n", os.Getenv("DB_NAME"))
-	return db, nil
+	AppDb = db
+	log.Println("Success connecting to db")
+	
+	return nil
 }
 
-func CloseDb(appDb *gorm.DB) {
-	sqlDB, _ := appDb.DB()
+func CloseDb() {
+	sqlDB, _ := AppDb.DB()
 	err := sqlDB.Close()
 
 	if err != nil {
