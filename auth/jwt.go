@@ -1,14 +1,13 @@
 package auth
 
 import (
+	"collaborative-markdown-editor/internal/config"
 	"errors"
-	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var secret = []byte(os.Getenv("JWT_SECRET"))
 
 func GenerateJWT(userID uint) (string, error) {
 	claims := jwt.MapClaims{
@@ -17,13 +16,13 @@ func GenerateJWT(userID uint) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(secret)
+	return token.SignedString(config.AppConfig.JWTSecret)
 }
 
 func VerifyJWT(tokenString string) (*jwt.Token, error) {
 	// parse token
 	jwtToken, err :=  jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		return secret, nil
+		return config.AppConfig.JWTSecret, nil
 	})
 	
 	if err != nil {

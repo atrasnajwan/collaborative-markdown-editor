@@ -1,8 +1,8 @@
 package redis
 
 import (
+	"collaborative-markdown-editor/internal/config"
 	"context"
-	"os"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -12,6 +12,6 @@ var RedisClient *redis.Client
 
 func InitRedis() {
 	RedisClient = redis.NewClient(&redis.Options{
-		Addr: os.Getenv("REDIS_ADDRESS"),
+		Addr: config.AppConfig.RedisAddress,
 	})
 }
