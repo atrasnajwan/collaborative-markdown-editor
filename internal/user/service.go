@@ -4,6 +4,7 @@ import (
 	"collaborative-markdown-editor/internal/errors"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // Service defines the interface for user business logic
@@ -16,30 +17,41 @@ type Service interface {
 
 // DefaultService implements Service
 type DefaultService struct {
-	repo Repository
+	repository UserRepository
 }
 
 // NewService creates a new user service
-func NewService(repo Repository) Service {
-	return &DefaultService{repo: repo}
+func NewService(repository UserRepository) Service {
+	return &DefaultService{repository: repository}
 }
 
 // Register registers a new user
 func (s *DefaultService) Register(user *User) error {
 	// Check if user with email already exists
-	_, err := s.repo.FindByEmail(user.Email)
+	_, err := s.repository.FindByEmail(user.Email)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return err
+	}
 	if err == nil {
 		return errors.ErrUnprocessableEntity(nil)
 	}
 
+	// Hash the password before saving
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.PasswordHash), bcrypt.DefaultCost)
+	if err != nil {
+		return errors.ErrUnprocessableEntity(err)
+	}
+	user.PasswordHash = string(hashedPassword)
+	user.IsActive = true
+
 	// Create user
-	return s.repo.Create(user)
+	return s.repository.Create(user)
 }
 
 // Login authenticates a user
 func (s *DefaultService) Login(email, password string) (*User, error) {
 	// Find user by email
-	user, err := s.repo.FindByEmail(email)
+	user, err := s.repository.FindByEmail(email)
 	if err != nil {
 		return nil, errors.ErrUnauthorized(err)
 	}
@@ -60,10 +72,10 @@ func (s *DefaultService) Login(email, password string) (*User, error) {
 
 // GetUserByID gets a user by ID
 func (s *DefaultService) GetUserByID(id uint) (*User, error) {
-	return s.repo.FindByID(id)
+	return s.repository.FindByID(id)
 }
 
 // DeactivateUser deactivates a user
 func (s *DefaultService) DeactivateUser(id uint) error {
-	return s.repo.Deactivate(id)
+	return s.repository.Deactivate(id)
 }
