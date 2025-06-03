@@ -3,16 +3,14 @@ package user
 import (
 	"collaborative-markdown-editor/internal/document"
 	"time"
-
-	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
+// User represents a user in the system
 type User struct {
 	ID           uint
 	Name         string
 	Email        string `gorm:"uniqueIndex"`
-	Password     string `gorm:"-"` // input only, not on db
+	Password     string `gorm:"-"` // input only, not stored in db
 	PasswordHash string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
@@ -20,20 +18,22 @@ type User struct {
 	Documents    []document.Document
 }
 
-// BeforeCreate GORM hook: hash the password before saving
-func (user *User) BeforeCreate(db *gorm.DB) (err error) {
-	hashed, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return err
+// SafeUser represents a user without sensitive information
+type SafeUser struct {
+	ID        uint      `json:"id"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
+	CreatedAt time.Time `json:"created_at"`
+	IsActive  bool      `json:"is_active"`
+}
+
+// ToSafeUser converts a User to a SafeUser
+func (u *User) ToSafeUser() SafeUser {
+	return SafeUser{
+		ID:        u.ID,
+		Name:      u.Name,
+		Email:     u.Email,
+		CreatedAt: u.CreatedAt,
+		IsActive:  u.IsActive,
 	}
-	user.PasswordHash = string(hashed)
-	return nil
-}
-
-func (user *User) Deactivate(db *gorm.DB) error {
-	return db.Model(user).Update("is_active", false).Error
-}
-
-func (user *User) FindByEmail(db *gorm.DB) error {
-	return db.Where("email = ?", user.Email).First(&user).Error
 }
