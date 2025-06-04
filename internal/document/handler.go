@@ -74,5 +74,5 @@ func (h *Handler) ShowUserDocuments(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"documents": docs, "meta": meta})
+	c.JSON(http.StatusOK, gin.H{"data": docs, "meta": meta})
 }
