@@ -100,7 +100,7 @@ func (h *Handler) Logout(c *gin.Context) {
 func (h *Handler) GetProfile(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
-		errors.HandleError(c, errors.ErrUnauthorized(nil))
+		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
 		return
 	}
 

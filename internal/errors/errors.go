@@ -58,12 +58,12 @@ var (
 // HandleError handles an error and responds with the appropriate status code and message
 func HandleError(c *gin.Context, err error) {
 	var appErr *AppError
+	log.Printf("%v\n", err.Error())
 	if errors.As(err, &appErr) {
-		c.JSON(appErr.Code, gin.H{"error": appErr.Message})
+		c.JSON(appErr.Code, gin.H{"error": appErr.Message })
 		return
 	}
 	
-	log.Println(err)
 	// Default to internal server error
 	c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 }

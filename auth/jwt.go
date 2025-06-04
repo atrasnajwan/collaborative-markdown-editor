@@ -2,7 +2,7 @@ package auth
 
 import (
 	"collaborative-markdown-editor/internal/config"
-	"errors"
+	"collaborative-markdown-editor/internal/errors"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -22,7 +22,7 @@ func GenerateJWT(userID uint) (string, error) {
 func VerifyJWT(tokenString string) (*jwt.Token, error) {
 	// parse token
 	jwtToken, err :=  jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		return config.AppConfig.JWTSecret, nil
+		return []byte(config.AppConfig.JWTSecret), nil
 	})
 	
 	if err != nil {
@@ -31,8 +31,20 @@ func VerifyJWT(tokenString string) (*jwt.Token, error) {
 	
 	// isValid
 	if !jwtToken.Valid {
-		return nil, errors.New("token invalid")
+		return nil, errors.ErrUnauthorized(nil).WithMessage("token invalid")
 	}
 
 	return jwtToken, nil
 } 
+
+func GetUserIDFromToken(token *jwt.Token) (uint, error) {
+    claims, ok := token.Claims.(jwt.MapClaims)
+    if !ok {
+        return 0, errors.ErrUnauthorized(nil).WithMessage("invalid token claims")
+    }
+    userIDFloat, ok := claims["user_id"].(float64)
+    if !ok {
+        return 0, errors.ErrUnauthorized(nil).WithMessage("user_id not found in token")
+    }
+    return uint(userIDFloat), nil
+}
