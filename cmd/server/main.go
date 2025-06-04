@@ -55,6 +55,7 @@ func main() {
 	router.DELETE("/logout", auth.AuthMiddleWare(), userHandler.Logout)
 	router.GET("/profile", auth.AuthMiddleWare(), userHandler.GetProfile)
 	router.POST("/documents", auth.AuthMiddleWare(), docHandler.Create)
+	router.GET("/documents", auth.AuthMiddleWare(), docHandler.ShowUserDocuments)
 
 	// Server configuration
 	serverPort := config.AppConfig.ServerPort
