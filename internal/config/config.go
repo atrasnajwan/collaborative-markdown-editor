@@ -11,7 +11,8 @@ import (
 
 type Config struct {
 	// Server configuration
-	ServerPort string
+	ServerPort  string
+	Environment string
 
 	// Database configuration
 	DBHost     string
@@ -58,6 +59,7 @@ func LoadConfig() {
 
 	AppConfig = Config{
 		ServerPort:   getEnv("PORT", "8080"),
+		Environment:  getEnv("ENV", "development"),
 		DBHost:       getEnv("DB_HOST", "localhost"),
 		DBPort:       getEnv("DB_PORT", "5432"),
 		DBUser:       getEnv("DB_USER", "postgres"),

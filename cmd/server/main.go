@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-contrib/cors"
 )
 
 func main() {
@@ -48,6 +49,23 @@ func main() {
 
 	// Initialize Gin router
 	router := gin.Default()
+
+	// cors setting
+	corsConfig := cors.Config{
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: false,
+	}
+
+	if config.AppConfig.Environment == "development" {
+		// Allow all origins in development
+		corsConfig.AllowAllOrigins = true
+	} else {
+		// Restrict origins in production
+		corsConfig.AllowOrigins = []string{"https://production-frontend.com"}
+	}
+	router.Use(cors.New(corsConfig))
 
 	// User routes
 	router.POST("/register", userHandler.Register)
