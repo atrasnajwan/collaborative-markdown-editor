@@ -2,6 +2,7 @@ package errors
 
 import (
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,15 @@ func (e *AppError) Error() string {
 // Unwrap returns the original error
 func (e *AppError) Unwrap() error {
 	return e.Err
+}
+
+// WithMessage returns a copy of the AppError with a custom message
+func (e *AppError) WithMessage(msg string) *AppError {
+    return &AppError{
+        Code:    e.Code,
+        Message: msg,
+        Err:     e.Err,
+    }
 }
 
 // NewAppError creates a new application error
@@ -52,7 +62,8 @@ func HandleError(c *gin.Context, err error) {
 		c.JSON(appErr.Code, gin.H{"error": appErr.Message})
 		return
 	}
-
+	
+	log.Println(err)
 	// Default to internal server error
 	c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
 }

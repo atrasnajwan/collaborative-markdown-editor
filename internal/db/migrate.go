@@ -37,8 +37,9 @@ func SeedData() {
 	// Check if user exists
 	_, err := userRepo.FindByEmail(testUser.Email)
 	if err != nil {
+		userService := user.NewService(userRepo)
 		// User doesn't exist, create it
-		if err := userRepo.Create(testUser); err != nil {
+		if err := userService.Register(testUser); err != nil {
 			log.Printf("Error creating test user: %v", err)
 		} else {
 			log.Printf("Created test user: %s", testUser.Email)

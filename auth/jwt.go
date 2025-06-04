@@ -16,7 +16,7 @@ func GenerateJWT(userID uint) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(config.AppConfig.JWTSecret)
+	return token.SignedString([]byte(config.AppConfig.JWTSecret))
 }
 
 func VerifyJWT(tokenString string) (*jwt.Token, error) {
