@@ -5,12 +5,12 @@ import (
 )
 
 type Document struct {
-	ID        uint
-	Name      string
-	Content   *string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	UserID    uint
+    ID        uint      `json:"id"`
+    Name      string    `json:"name"`
+    Content   *string   `json:"content"`
+    CreatedAt time.Time `json:"created_at"`
+    UpdatedAt time.Time `json:"updated_at"`
+    UserID    uint      `json:"user_id"`
 }
 
 type DocumentPermission struct {

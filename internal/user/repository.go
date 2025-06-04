@@ -10,7 +10,7 @@ type UserRepository interface {
 	Deactivate(id uint) error
 }
 
-// UserRepositoryImpl implements domain.UserRepository
+// UserRepositoryImpl implements User
 type UserRepositoryImpl struct{
 	db *gorm.DB
 }

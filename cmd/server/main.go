@@ -4,6 +4,7 @@ import (
 	"collaborative-markdown-editor/auth"
 	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/db"
+	"collaborative-markdown-editor/internal/document"
 	"collaborative-markdown-editor/internal/user"
 	"collaborative-markdown-editor/redis"
 	"context"
@@ -35,9 +36,14 @@ func main() {
 	// Initialize Redis
 	redis.InitRedis()
 
-	// Initialize user repository and service
+	// Initialize repository
 	userRepo := user.NewRepository(db.AppDb)
+	docRepo := document.NewRepository(db.AppDb)
+	// Initialize service
 	userService := user.NewService(userRepo)
+	docService := document.NewService(docRepo)
+	// Initialize handler
+	docHandler := document.NewHandler(docService)
 	userHandler := user.NewHandler(userService)
 
 	// Initialize Gin router
@@ -48,6 +54,7 @@ func main() {
 	router.POST("/login", userHandler.Login)
 	router.DELETE("/logout", auth.AuthMiddleWare(), userHandler.Logout)
 	router.GET("/profile", auth.AuthMiddleWare(), userHandler.GetProfile)
+	router.POST("/documents", auth.AuthMiddleWare(), docHandler.Create)
 
 	// Server configuration
 	serverPort := config.AppConfig.ServerPort
