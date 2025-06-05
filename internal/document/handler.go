@@ -17,7 +17,7 @@ func NewHandler(service Service) *Handler {
 }
 
 type FormCreate struct {
-	Name    string `json:"name" binding:"required"`
+	Title   string `json:"Title" binding:"required"`
 	Content string `json:"content"`
 }
 
@@ -35,7 +35,7 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	doc := &Document{
-		Name:    form.Name,
+		Title:   form.Title,
 		Content: &form.Content,
 	}
 
@@ -44,7 +44,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"document": doc})
+	c.JSON(http.StatusCreated, doc)
 }
 
 func (h *Handler) ShowUserDocuments(c *gin.Context) {
