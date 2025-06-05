@@ -20,9 +20,9 @@ type DocumentsData struct {
 type DocumentRepository interface {
 	Create(userID uint, document *Document) error
 	GetByUserID(userID uint, page, pageSize int) (DocumentsData, error)
+	FindByID(id uint) (*Document, error)
 }
 
-// UserRepositoryImpl implements User
 type DocumentRepositoryImpl struct {
 	db *gorm.DB
 }
@@ -67,4 +67,10 @@ func (r *DocumentRepositoryImpl) GetByUserID(userID uint, page, pageSize int) (D
 			CurrentPage: page,
 		},
 	}, err
+}
+
+func (r *DocumentRepositoryImpl) FindByID(id uint) (*Document, error) {
+	var doc Document
+	err := r.db.First(&doc, id).Error
+	return &doc, err
 }

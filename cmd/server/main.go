@@ -74,6 +74,7 @@ func main() {
 	router.GET("/profile", auth.AuthMiddleWare(), userHandler.GetProfile)
 	router.POST("/documents", auth.AuthMiddleWare(), docHandler.Create)
 	router.GET("/documents", auth.AuthMiddleWare(), docHandler.ShowUserDocuments)
+	router.GET("/documents/:id", auth.AuthMiddleWare(), docHandler.ShowDocument)
 
 	// Server configuration
 	serverPort := config.AppConfig.ServerPort

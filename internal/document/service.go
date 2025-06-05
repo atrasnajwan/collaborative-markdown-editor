@@ -3,6 +3,7 @@ package document
 type Service interface {
 	CreateUserDocument(userID uint, document *Document) error
 	GetUserDocuments(userId uint, page, pageSize int) ([]Document, DocumentsMeta, error)
+	GetDocumentByID(docID uint) (*Document, error)
 }
 
 type DefaultService struct {
@@ -28,3 +29,6 @@ func (s *DefaultService) GetUserDocuments(userId uint, page, pageSize int) ([]Do
 	return documentsData.Documents, documentsData.Meta, nil
 }
 
+func (s *DefaultService) GetDocumentByID(docID uint) (*Document, error) {
+	return s.repository.FindByID(docID)
+}
