@@ -75,6 +75,7 @@ func main() {
 	router.POST("/documents", auth.AuthMiddleWare(), docHandler.Create)
 	router.GET("/documents", auth.AuthMiddleWare(), docHandler.ShowUserDocuments)
 	router.GET("/documents/:id", auth.AuthMiddleWare(), docHandler.ShowDocument)
+	router.GET("/documents/:id/edit", auth.AuthMiddleWare(), docHandler.EditDocument)
 
 	// Server configuration
 	serverPort := config.AppConfig.ServerPort

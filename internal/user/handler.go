@@ -110,5 +110,5 @@ func (h *Handler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"user": user.ToSafeUser()})
+	c.JSON(http.StatusOK, user.ToSafeUser())
 }
