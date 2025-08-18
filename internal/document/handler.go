@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -106,14 +107,16 @@ func (h *Handler) ShowDocument(c *gin.Context) {
 	c.JSON(http.StatusOK, doc)
 }
 
-// New WebSocket handler for editing documents
+var docClients = make(map[uint]map[*websocket.Conn]bool)
+var docClientsMu sync.Mutex
+
+// WebSocket handler for editing documents
 func (h *Handler) EditDocument(c *gin.Context) {
 	wsCon, err := upgrader.Upgrade(c.Writer, c.Request, nil); 
 	if err != nil {
 		errors.HandleError(c, errors.ErrInternalServer(err).WithMessage("Error upgrading to WebSocket"))
 		return
 	}
-
 	defer wsCon.Close()
 
 	docIDStr := c.Param("id")
@@ -123,26 +126,49 @@ func (h *Handler) EditDocument(c *gin.Context) {
 		return
 	}
 
-	userName, exist := c.Get("user_name")
-	if !exist {
-		log.Println("Username is not define")
-	}
+	docID := uint(docIDUint)
 
-	_, err = h.service.GetDocumentByID(uint(docIDUint))
+	_, err = h.service.GetDocumentByID(docID)
 	if err != nil {
 		errors.HandleError(c, errors.ErrNotFound(err).WithMessage("document not found"))
 		return
 	}
 
-	fmt.Println("docID", docIDStr)
+	userName, exist := c.Get("user_name")
+	if !exist {
+		log.Println("Username is not define")
+	}
+
+    // Register connection
+    docClientsMu.Lock()
+    if docClients[docID] == nil {
+        docClients[docID] = make(map[*websocket.Conn]bool)
+    }
+    docClients[docID][wsCon] = true
+    docClientsMu.Unlock()
+
+    defer func() {
+        docClientsMu.Lock()
+        delete(docClients[docID], wsCon)
+        docClientsMu.Unlock()
+    }()
 
 	for {
-		_, _, err := wsCon.ReadMessage()
+		messageType, msg, err := wsCon.ReadMessage()
 		if err != nil {
 			log.Println("Error reading message:", err)
 			break
 		}
-		// log.Println(messageType, p)
+
+        docClientsMu.Lock()
+        for client := range docClients[docID] {
+			// Broadcast to other clients
+            if client != wsCon {
+				// must be using y-websocket on the frontend
+                client.WriteMessage(messageType, msg)
+            }
+        }
+        docClientsMu.Unlock()
 	}
 
 	fmt.Printf("%s disconnected\n", userName)
