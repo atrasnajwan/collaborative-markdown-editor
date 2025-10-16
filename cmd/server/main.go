@@ -1,4 +1,4 @@
-package main
+	package main
 
 import (
 	"collaborative-markdown-editor/auth"
@@ -76,6 +76,7 @@ func main() {
 	router.GET("/documents", auth.AuthMiddleWare(), docHandler.ShowUserDocuments)
 	router.GET("/documents/:id", auth.AuthMiddleWare(), docHandler.ShowDocument)
 	router.GET("/documents/:id/edit", auth.AuthMiddleWare(), docHandler.EditDocument)
+	router.PUT("/documents/:id", auth.AuthMiddleWare(), docHandler.UpdateDocument)
 
 	// Server configuration
 	serverPort := config.AppConfig.ServerPort

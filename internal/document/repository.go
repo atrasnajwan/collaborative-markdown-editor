@@ -19,6 +19,7 @@ type DocumentsData struct {
 }
 type DocumentRepository interface {
 	Create(userID uint, document *Document) error
+	UpdateContent(id uint, content string) error
 	GetByUserID(userID uint, page, pageSize int) (DocumentsData, error)
 	FindByID(id uint) (*Document, error)
 }
@@ -39,6 +40,11 @@ func (r *DocumentRepositoryImpl) Create(userID uint, document *Document) error {
 	document.UpdatedAt = time.Now()
 
 	return r.db.Create(document).Error
+}
+
+func (r *DocumentRepositoryImpl) UpdateContent(id uint, content string) error {
+    result := r.db.Model(&Document{}).Where("id = ?", id).Update("content", content)
+    return result.Error
 }
 
 func (r *DocumentRepositoryImpl) GetByUserID(userID uint, page, pageSize int) (DocumentsData, error) {

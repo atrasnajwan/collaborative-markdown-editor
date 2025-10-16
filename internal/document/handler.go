@@ -30,7 +30,9 @@ var upgrader = websocket.Upgrader{
 }
 type FormCreate struct {
 	Title   string `json:"Title" binding:"required"`
-	Content string `json:"content"`
+}
+type FormSave struct {
+	Content string `json:"content" binding:"required"`
 }
 
 func (h *Handler) Create(c *gin.Context) {
@@ -48,7 +50,6 @@ func (h *Handler) Create(c *gin.Context) {
 
 	doc := &Document{
 		Title:   form.Title,
-		Content: &form.Content,
 	}
 
 	if err := h.service.CreateUserDocument(userID.(uint), doc); err != nil {
@@ -57,6 +58,36 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, doc)
+}
+
+func (h *Handler) UpdateDocument(c *gin.Context) {
+	_, exists := c.Get("user_id")
+	if !exists {
+		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
+		return
+	}
+
+	docIDStr := c.Param("id")
+	docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)
+	
+	if err != nil {
+		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		return
+	}
+	
+	var form FormSave
+	if err := c.ShouldBindJSON(&form); err != nil {
+		errors.HandleError(c, errors.ErrInvalidInput(err))
+		return
+	}
+	
+	err = h.service.UpdateDocumentContent(uint(docIDUint), form.Content)
+    if err != nil {
+        errors.HandleError(c, err)
+        return
+    }
+
+    c.Status(http.StatusOK)
 }
 
 func (h *Handler) ShowUserDocuments(c *gin.Context) {
