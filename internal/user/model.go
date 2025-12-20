@@ -7,7 +7,7 @@ import (
 
 // User represents a user in the system
 type User struct {
-	ID           uint
+	ID           uint64
 	Name         string
 	Email        string `gorm:"uniqueIndex"`
 	Password     string `gorm:"-"` // input only, not stored in db
@@ -20,7 +20,7 @@ type User struct {
 
 // SafeUser represents a user without sensitive information
 type SafeUser struct {
-	ID        uint      `json:"id"`
+	ID        uint64      `json:"id"`
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`

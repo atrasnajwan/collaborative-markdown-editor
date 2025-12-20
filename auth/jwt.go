@@ -9,7 +9,7 @@ import (
 )
 
 
-func GenerateJWT(userID uint) (string, error) {
+func GenerateJWT(userID uint64) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"exp":     time.Now().Add(time.Hour * 24 * 3).Unix(), // expires in 3 days
@@ -37,7 +37,7 @@ func VerifyJWT(tokenString string) (*jwt.Token, error) {
 	return jwtToken, nil
 } 
 
-func GetUserIDFromToken(token *jwt.Token) (uint, error) {
+func GetUserIDFromToken(token *jwt.Token) (uint64, error) {
     claims, ok := token.Claims.(jwt.MapClaims)
     if !ok {
         return 0, errors.ErrUnauthorized(nil).WithMessage("invalid token claims")
@@ -46,5 +46,5 @@ func GetUserIDFromToken(token *jwt.Token) (uint, error) {
     if !ok {
         return 0, errors.ErrUnauthorized(nil).WithMessage("user_id not found in token")
     }
-    return uint(userIDFloat), nil
+    return uint64(userIDFloat), nil
 }

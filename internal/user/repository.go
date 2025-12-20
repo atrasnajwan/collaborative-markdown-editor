@@ -6,8 +6,8 @@ import "gorm.io/gorm"
 type UserRepository interface {
 	Create(user *User) error
 	FindByEmail(email string) (*User, error)
-	FindByID(id uint) (*User, error)
-	Deactivate(id uint) error
+	FindByID(id uint64) (*User, error)
+	Deactivate(id uint64) error
 }
 
 // UserRepositoryImpl implements User
@@ -36,14 +36,14 @@ func (r *UserRepositoryImpl) FindByEmail(email string) (*User, error) {
 }
 
 // FindByID finds a user by ID
-func (r *UserRepositoryImpl) FindByID(id uint) (*User, error) {
+func (r *UserRepositoryImpl) FindByID(id uint64) (*User, error) {
 	var user User
 	err := r.db.First(&user, id).Error
 	return &user, err
 }
 
 // Deactivate deactivates a user
-func (r *UserRepositoryImpl) Deactivate(id uint) error {
+func (r *UserRepositoryImpl) Deactivate(id uint64) error {
 	user, err := r.FindByID(id)
 	if err != nil {
 		return err

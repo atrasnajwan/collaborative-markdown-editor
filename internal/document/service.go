@@ -1,10 +1,10 @@
 package document
 
 type Service interface {
-	CreateUserDocument(userID uint, document *Document) error
-	UpdateDocumentContent(id uint, content string) error
-	GetUserDocuments(userId uint, page, pageSize int) ([]Document, DocumentsMeta, error)
-	GetDocumentByID(docID uint) (*Document, error)
+	CreateUserDocument(userID uint64, document *Document) error
+	UpdateDocumentContent(id uint64, content string) error
+	GetUserDocuments(userId uint64, page, pageSize int) ([]Document, DocumentsMeta, error)
+	GetDocumentByID(docID uint64) (*Document, error)
 }
 
 type DefaultService struct {
@@ -15,12 +15,12 @@ func NewService(repository DocumentRepository) Service {
 	return &DefaultService{repository: repository}
 }
 
-func (s *DefaultService) CreateUserDocument(userId uint, document *Document) error {
+func (s *DefaultService) CreateUserDocument(userId uint64, document *Document) error {
 	// Create document for user
 	return s.repository.Create(userId, document)
 }
 
-func (s *DefaultService) UpdateDocumentContent(id uint, content string) error {
+func (s *DefaultService) UpdateDocumentContent(id uint64, content string) error {
     err := s.repository.UpdateContent(id, content)
     if err != nil {
         return err
@@ -29,7 +29,7 @@ func (s *DefaultService) UpdateDocumentContent(id uint, content string) error {
     return nil
 }
 
-func (s *DefaultService) GetUserDocuments(userId uint, page, pageSize int) ([]Document, DocumentsMeta, error) {
+func (s *DefaultService) GetUserDocuments(userId uint64, page, pageSize int) ([]Document, DocumentsMeta, error) {
 	documentsData, err := s.repository.GetByUserID(userId, page, pageSize)
 
 	if err != nil {
@@ -39,6 +39,6 @@ func (s *DefaultService) GetUserDocuments(userId uint, page, pageSize int) ([]Do
 	return documentsData.Documents, documentsData.Meta, nil
 }
 
-func (s *DefaultService) GetDocumentByID(docID uint) (*Document, error) {
+func (s *DefaultService) GetDocumentByID(docID uint64) (*Document, error) {
 	return s.repository.FindByID(docID)
 }

@@ -11,8 +11,8 @@ import (
 type Service interface {
 	Register(user *User) error
 	Login(email, password string) (*User, error)
-	GetUserByID(id uint) (*User, error)
-	DeactivateUser(id uint) error
+	GetUserByID(id uint64) (*User, error)
+	DeactivateUser(id uint64) error
 }
 
 // DefaultService implements Service
@@ -71,11 +71,11 @@ func (s *DefaultService) Login(email, password string) (*User, error) {
 }
 
 // GetUserByID gets a user by ID
-func (s *DefaultService) GetUserByID(id uint) (*User, error) {
+func (s *DefaultService) GetUserByID(id uint64) (*User, error) {
 	return s.repository.FindByID(id)
 }
 
 // DeactivateUser deactivates a user
-func (s *DefaultService) DeactivateUser(id uint) error {
+func (s *DefaultService) DeactivateUser(id uint64) error {
 	return s.repository.Deactivate(id)
 }

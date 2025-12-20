@@ -104,7 +104,7 @@ func (h *Handler) GetProfile(c *gin.Context) {
 		return
 	}
 
-	user, err := h.service.GetUserByID(userID.(uint))
+	user, err := h.service.GetUserByID(userID.(uint64))
 	if err != nil {
 		errors.HandleError(c, err)
 		return

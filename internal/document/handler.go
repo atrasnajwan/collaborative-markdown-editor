@@ -52,7 +52,7 @@ func (h *Handler) Create(c *gin.Context) {
 		Title:   form.Title,
 	}
 
-	if err := h.service.CreateUserDocument(userID.(uint), doc); err != nil {
+	if err := h.service.CreateUserDocument(userID.(uint64), doc); err != nil {
 		errors.HandleError(c, err)
 		return
 	}
@@ -81,7 +81,7 @@ func (h *Handler) UpdateDocument(c *gin.Context) {
 		return
 	}
 	
-	err = h.service.UpdateDocumentContent(uint(docIDUint), form.Content)
+	err = h.service.UpdateDocumentContent(uint64(docIDUint), form.Content)
     if err != nil {
         errors.HandleError(c, err)
         return
@@ -111,7 +111,7 @@ func (h *Handler) ShowUserDocuments(c *gin.Context) {
 		}
 	}
 
-	docs, meta, err := h.service.GetUserDocuments(userID.(uint), page, pageSize)
+	docs, meta, err := h.service.GetUserDocuments(userID.(uint64), page, pageSize)
 	if err != nil {
 		errors.HandleError(c, err)
 		return
@@ -129,7 +129,7 @@ func (h *Handler) ShowDocument(c *gin.Context) {
 		return
 	}
 	
-	doc, err := h.service.GetDocumentByID(uint(docIDUint))
+	doc, err := h.service.GetDocumentByID(uint64(docIDUint))
 	if err != nil {
 		errors.HandleError(c, err)
 		return
@@ -138,7 +138,7 @@ func (h *Handler) ShowDocument(c *gin.Context) {
 	c.JSON(http.StatusOK, doc)
 }
 
-var docClients = make(map[uint]map[*websocket.Conn]bool)
+var docClients = make(map[uint64]map[*websocket.Conn]bool)
 var docClientsMu sync.Mutex
 
 // WebSocket handler for editing documents
@@ -157,9 +157,7 @@ func (h *Handler) EditDocument(c *gin.Context) {
 		return
 	}
 
-	docID := uint(docIDUint)
-
-	_, err = h.service.GetDocumentByID(docID)
+	_, err = h.service.GetDocumentByID(docIDUint)
 	if err != nil {
 		errors.HandleError(c, errors.ErrNotFound(err).WithMessage("document not found"))
 		return
@@ -172,15 +170,15 @@ func (h *Handler) EditDocument(c *gin.Context) {
 
     // Register connection
     docClientsMu.Lock()
-    if docClients[docID] == nil {
-        docClients[docID] = make(map[*websocket.Conn]bool)
+    if docClients[docIDUint] == nil {
+        docClients[docIDUint] = make(map[*websocket.Conn]bool)
     }
-    docClients[docID][wsCon] = true
+    docClients[docIDUint][wsCon] = true
     docClientsMu.Unlock()
 
     defer func() {
         docClientsMu.Lock()
-        delete(docClients[docID], wsCon)
+        delete(docClients[docIDUint], wsCon)
         docClientsMu.Unlock()
     }()
 
@@ -192,7 +190,7 @@ func (h *Handler) EditDocument(c *gin.Context) {
 		}
 
         docClientsMu.Lock()
-        for client := range docClients[docID] {
+        for client := range docClients[docIDUint] {
 			// Broadcast to other clients
             if client != wsCon {
 				// must be using y-websocket on the frontend

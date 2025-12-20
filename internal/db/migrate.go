@@ -11,14 +11,28 @@ func Migrate() {
 	err := AppDb.AutoMigrate(
 		&user.User{},
 		&document.Document{},
-		&document.DocumentEdit{},
-		&document.DocumentPermission{},
+		&document.DocumentUpdate{},
+		&document.DocumentSnapshot{},
+		&document.DocumentVersion{},
+		&document.DocumentCollaborator{},
 	)
 
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err)	
 	}
 
+	// db indexes
+	statements := []string{
+		`CREATE UNIQUE INDEX idx_document_seq_unique ON document_updates (document_id, seq);`,
+		`CREATE INDEX idx_updates_doc_created ON document_updates (document_id, created_at);`,
+		`CREATE INDEX idx_versions_doc ON document_versions (document_id);`,
+		`CREATE INDEX idx_snapshots_doc_seq ON document_snapshots (document_id, seq DESC);`,
+	}
+	err = RunSQL(statements)
+	
+	if err != nil {
+        log.Fatal(err)
+    }
 	log.Println("Database schema migrated successfully")
 }
 
@@ -47,4 +61,13 @@ func SeedData() {
 	} else {
 		log.Printf("Test user already exists: %s", testUser.Email)
 	}
+}
+
+func RunSQL(queries []string) error {
+    for _, q := range queries {
+        if err := AppDb.Exec(q).Error; err != nil {
+            return err
+        }
+    }
+    return nil
 }

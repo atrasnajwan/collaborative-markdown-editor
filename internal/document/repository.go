@@ -18,10 +18,10 @@ type DocumentsData struct {
 	Meta      DocumentsMeta `json:"total_page"`
 }
 type DocumentRepository interface {
-	Create(userID uint, document *Document) error
-	UpdateContent(id uint, content string) error
-	GetByUserID(userID uint, page, pageSize int) (DocumentsData, error)
-	FindByID(id uint) (*Document, error)
+	Create(userID uint64, document *Document) error
+	UpdateContent(id uint64, content string) error
+	GetByUserID(userID uint64, page, pageSize int) (DocumentsData, error)
+	FindByID(id uint64) (*Document, error)
 }
 
 type DocumentRepositoryImpl struct {
@@ -34,20 +34,20 @@ func NewRepository(db *gorm.DB) DocumentRepository {
 }
 
 // Create creates a new user
-func (r *DocumentRepositoryImpl) Create(userID uint, document *Document) error {
+func (r *DocumentRepositoryImpl) Create(userID uint64, document *Document) error {
 	document.UserID = userID
-	document.CreatedAt = time.Now()
-	document.UpdatedAt = time.Now()
+	document.CreatedAt = time.Now().UTC() // Use UTC for consistency
+	document.UpdatedAt = time.Now().UTC()
 
 	return r.db.Create(document).Error
 }
 
-func (r *DocumentRepositoryImpl) UpdateContent(id uint, content string) error {
+func (r *DocumentRepositoryImpl) UpdateContent(id uint64, content string) error {
     result := r.db.Model(&Document{}).Where("id = ?", id).Update("content", content)
     return result.Error
 }
 
-func (r *DocumentRepositoryImpl) GetByUserID(userID uint, page, pageSize int) (DocumentsData, error) {
+func (r *DocumentRepositoryImpl) GetByUserID(userID uint64, page, pageSize int) (DocumentsData, error) {
 	var documents []Document
 	var totalRecords int64
 
@@ -75,7 +75,7 @@ func (r *DocumentRepositoryImpl) GetByUserID(userID uint, page, pageSize int) (D
 	}, err
 }
 
-func (r *DocumentRepositoryImpl) FindByID(id uint) (*Document, error) {
+func (r *DocumentRepositoryImpl) FindByID(id uint64) (*Document, error) {
 	var doc Document
 	err := r.db.First(&doc, id).Error
 	return &doc, err
