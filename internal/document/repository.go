@@ -38,7 +38,13 @@ func (r *DocumentRepositoryImpl) Create(userID uint64, document *Document) error
 	document.UserID = userID
 	document.CreatedAt = time.Now().UTC() // Use UTC for consistency
 	document.UpdatedAt = time.Now().UTC()
-
+	document.Collaborators = []DocumentCollaborator{
+		{
+			UserID:  userID,
+			Role:    "owner",
+			AddedAt: time.Now().UTC(),
+		},
+	}
 	return r.db.Create(document).Error
 }
 

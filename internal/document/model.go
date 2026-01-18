@@ -44,7 +44,7 @@ type DocumentVersion struct {
 	Name        string    `gorm:"type:text;not null"`
 	Seq         uint64    `gorm:"not null"`
 	CreatedBy  	uint64    `gorm:"not null;index"`
-	CreatedAt  time.Time
+	CreatedAt  	time.Time
 }
 
 type DocumentCollaborator struct {
