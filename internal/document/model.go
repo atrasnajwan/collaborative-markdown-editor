@@ -10,6 +10,8 @@ type Document struct {
 	ID            uint64    `gorm:"primaryKey;auto"`
 	Title         string    `gorm:"type:text;not null"`
 	UserID   	  uint64    `gorm:"not null;index"`
+	UpdateSeq 	  uint64 	`gorm:"not null;default:0"`
+	
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 

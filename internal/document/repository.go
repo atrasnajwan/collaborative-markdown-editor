@@ -19,7 +19,7 @@ type DocumentsData struct {
 }
 type DocumentRepository interface {
 	Create(userID uint64, document *Document) error
-	UpdateContent(id uint64, content string) error
+	UpdateContent(id uint64, userID uint64, content []byte) error
 	GetByUserID(userID uint64, page, pageSize int) (DocumentsData, error)
 	FindByID(id uint64) (*Document, error)
 }
@@ -48,9 +48,36 @@ func (r *DocumentRepositoryImpl) Create(userID uint64, document *Document) error
 	return r.db.Create(document).Error
 }
 
-func (r *DocumentRepositoryImpl) UpdateContent(id uint64, content string) error {
-    result := r.db.Model(&Document{}).Where("id = ?", id).Update("content", content)
-    return result.Error
+func (r *DocumentRepositoryImpl) UpdateContent(id uint64, userId uint64, content []byte) error {
+    var seq uint64
+
+	err := db.Transaction(func(tx *gorm.DB) error {
+		// 1. increment sequence on document
+		if err := tx.Raw(`
+			UPDATE documents
+			SET update_seq = update_seq + 1,
+			    updated_at = NOW()
+			WHERE id = ?
+			RETURNING update_seq
+		`, documentID).Scan(&seq).Error; err != nil {
+			return err
+		}
+
+		// 2. Insert document update with the generated seq
+		if err := tx.Create(&DocumentUpdate{
+			DocumentID:   	documentID,
+			Seq:          	seq,
+			UpdateBinary: 	content,
+			UserID:       	userID,
+			CreatedAt: 		time.Now().UTC(),
+		}).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+    return err
 }
 
 func (r *DocumentRepositoryImpl) GetByUserID(userID uint64, page, pageSize int) (DocumentsData, error) {
