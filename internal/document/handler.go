@@ -67,13 +67,13 @@ func (h *Handler) UpdateDocument(c *gin.Context) {
 		return
 	}
 
-	docIDStr := c.Param("id")
-	docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)
+	// docIDStr := c.Param("id")
+	// docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)
 	
-	if err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
-		return
-	}
+	// if err != nil {
+	// 	errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+	// 	return
+	// }
 	
 	var form FormSave
 	if err := c.ShouldBindJSON(&form); err != nil {
@@ -81,11 +81,11 @@ func (h *Handler) UpdateDocument(c *gin.Context) {
 		return
 	}
 	
-	err = h.service.UpdateDocumentContent(uint64(docIDUint), form.Content)
-    if err != nil {
-        errors.HandleError(c, err)
-        return
-    }
+	// err = h.service.UpdateDocumentContent(uint64(docIDUint), form.Content)
+    // if err != nil {
+    //     errors.HandleError(c, err)
+    //     return
+    // }
 
     c.Status(http.StatusOK)
 }
@@ -167,6 +167,11 @@ func (h *Handler) EditDocument(c *gin.Context) {
 	if !exist {
 		log.Println("Username is not define")
 	}
+	userID, exists := c.Get("user_id")
+	if !exists {
+		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
+		return
+	}
 
     // Register connection
     docClientsMu.Lock()
@@ -189,9 +194,18 @@ func (h *Handler) EditDocument(c *gin.Context) {
 			break
 		}
 
+		// create new document updates
+		if err := h.service.UpdateDocumentContent(
+			docIDUint,
+			userID.(uint64),
+			msg,             // raw Yjs binary
+		); err != nil {
+			log.Println("Failed to persist update:", err)
+		}
+
+		// Broadcast to other clients
         docClientsMu.Lock()
         for client := range docClients[docIDUint] {
-			// Broadcast to other clients
             if client != wsCon {
 				// must be using y-websocket on the frontend
                 client.WriteMessage(messageType, msg)
