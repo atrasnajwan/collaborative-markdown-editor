@@ -7,18 +7,18 @@ import (
 
 
 type Document struct {
-	ID            uint64    `gorm:"primaryKey;auto"`
-	Title         string    `gorm:"type:text;not null"`
-	UserID   	  uint64    `gorm:"not null;index"`
+	ID            uint64    `gorm:"primaryKey;auto" json:"id"`
+	Title         string    `gorm:"type:text;not null" json:"title"`
+	UserID   	  uint64    `gorm:"not null;index" json:"user_id"`
 	UpdateSeq 	  uint64 	`gorm:"not null;default:0"`
 	
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"` 
 
-	Updates       []DocumentUpdate   `gorm:"constraint:OnDelete:CASCADE"`
-	Snapshots     []DocumentSnapshot `gorm:"constraint:OnDelete:CASCADE"`
-	Versions      []DocumentVersion  `gorm:"constraint:OnDelete:CASCADE"`
-	Collaborators []DocumentCollaborator `gorm:"constraint:OnDelete:CASCADE"`
+	Updates       []DocumentUpdate   `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	Snapshots     []DocumentSnapshot `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	Versions      []DocumentVersion  `gorm:"constraint:OnDelete:CASCADE" json:"-"`
+	Collaborators []DocumentCollaborator `gorm:"constraint:OnDelete:CASCADE" json:"-"`
 }
 
 type DocumentUpdate struct {
