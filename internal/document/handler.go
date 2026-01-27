@@ -2,11 +2,12 @@ package document
 
 import (
 	"collaborative-markdown-editor/internal/errors"
-	"fmt"
-	"log"
+	// "fmt"
+	"io"
+	// "log"
 	"net/http"
 	"strconv"
-	"sync"
+	// "sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -60,36 +61,6 @@ func (h *Handler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, doc)
 }
 
-func (h *Handler) UpdateDocument(c *gin.Context) {
-	_, exists := c.Get("user_id")
-	if !exists {
-		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
-		return
-	}
-
-	// docIDStr := c.Param("id")
-	// docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)
-	
-	// if err != nil {
-	// 	errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
-	// 	return
-	// }
-	
-	var form FormSave
-	if err := c.ShouldBindJSON(&form); err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err))
-		return
-	}
-	
-	// err = h.service.UpdateDocumentContent(uint64(docIDUint), form.Content)
-    // if err != nil {
-    //     errors.HandleError(c, err)
-    //     return
-    // }
-
-    c.Status(http.StatusOK)
-}
-
 func (h *Handler) ShowUserDocuments(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -120,7 +91,7 @@ func (h *Handler) ShowUserDocuments(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": docs, "meta": meta})
 }
 
-func (h *Handler) ShowDocument(c *gin.Context) {
+func (h *Handler) ShowDocumentState(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)
 	
@@ -129,7 +100,7 @@ func (h *Handler) ShowDocument(c *gin.Context) {
 		return
 	}
 	
-	doc, err := h.service.GetDocumentByID(uint64(docIDUint))
+	doc, err := h.service.GetDocumentState(uint64(docIDUint))
 	if err != nil {
 		errors.HandleError(c, err)
 		return
@@ -138,34 +109,12 @@ func (h *Handler) ShowDocument(c *gin.Context) {
 	c.JSON(http.StatusOK, doc)
 }
 
-var docClients = make(map[uint64]map[*websocket.Conn]bool)
-var docClientsMu sync.Mutex
-
-// WebSocket handler for editing documents
-func (h *Handler) EditDocument(c *gin.Context) {
-	wsCon, err := upgrader.Upgrade(c.Writer, c.Request, nil); 
-	if err != nil {
-		errors.HandleError(c, errors.ErrInternalServer(err).WithMessage("Error upgrading to WebSocket"))
-		return
-	}
-	defer wsCon.Close()
-
+func (h *Handler) CreateUpdate(c *gin.Context) {
 	docIDStr := c.Param("id")
-	docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)	
+	docID, err := strconv.ParseUint(docIDStr, 10, 64)
 	if err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		errors.HandleError(c, errors.ErrInvalidInput(err))
 		return
-	}
-
-	_, err = h.service.GetDocumentByID(docIDUint)
-	if err != nil {
-		errors.HandleError(c, errors.ErrNotFound(err).WithMessage("document not found"))
-		return
-	}
-
-	userName, exist := c.Get("user_name")
-	if !exist {
-		log.Println("Username is not define")
 	}
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -173,46 +122,45 @@ func (h *Handler) EditDocument(c *gin.Context) {
 		return
 	}
 
-    // Register connection
-    docClientsMu.Lock()
-    if docClients[docIDUint] == nil {
-        docClients[docIDUint] = make(map[*websocket.Conn]bool)
-    }
-    docClients[docIDUint][wsCon] = true
-    docClientsMu.Unlock()
-
-    defer func() {
-        docClientsMu.Lock()
-        delete(docClients[docIDUint], wsCon)
-        docClientsMu.Unlock()
-    }()
-
-	for {
-		messageType, msg, err := wsCon.ReadMessage()
-		if err != nil {
-			log.Println("Error reading message:", err)
-			break
-		}
-
-		// create new document updates
-		if err := h.service.UpdateDocumentContent(
-			docIDUint,
-			userID.(uint64),
-			msg,             // raw Yjs binary
-		); err != nil {
-			log.Println("Failed to persist update:", err)
-		}
-
-		// Broadcast to other clients
-        docClientsMu.Lock()
-        for client := range docClients[docIDUint] {
-            if client != wsCon {
-				// must be using y-websocket on the frontend
-                client.WriteMessage(messageType, msg)
-            }
-        }
-        docClientsMu.Unlock()
+	updateBinary, err := io.ReadAll(c.Request.Body)
+	if err != nil || len(updateBinary) == 0 {
+		errors.HandleError(c, errors.ErrInvalidInput(err))
+		return
 	}
 
-	fmt.Printf("%s disconnected\n", userName)
+	err = h.service.CreateDocumentUpdate(
+		docID,
+		userID.(uint64),
+		updateBinary,	// raw Yjs binary
+	)
+	if err != nil {
+		errors.HandleError(c, err)
+		return
+	}
+
+	c.Status(http.StatusCreated)
 }
+
+func (h *Handler) CreateSnapshot(c *gin.Context) {
+	docIDStr := c.Param("id")
+	docID, err := strconv.ParseUint(docIDStr, 10, 64)
+	if err != nil {
+		errors.HandleError(c, errors.ErrInvalidInput(err))
+		return
+	}
+
+	snapshot, err := io.ReadAll(c.Request.Body)
+	if err != nil || len(snapshot) == 0 {
+		errors.HandleError(c, errors.ErrInvalidInput(err))
+		return
+	}
+
+	err = h.service.CreateSnapshot(c.Request.Context(), docID, snapshot)
+	if err != nil {
+		errors.HandleError(c, err)
+		return
+	}
+
+	c.Status(http.StatusCreated)
+}
+

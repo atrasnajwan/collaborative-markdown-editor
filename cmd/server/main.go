@@ -74,9 +74,9 @@ func main() {
 	router.GET("/profile", auth.AuthMiddleWare(), userHandler.GetProfile)
 	router.POST("/documents", auth.AuthMiddleWare(), docHandler.Create)
 	router.GET("/documents", auth.AuthMiddleWare(), docHandler.ShowUserDocuments)
-	router.GET("/documents/:id", auth.AuthMiddleWare(), docHandler.ShowDocument)
-	router.GET("/documents/:id/edit", auth.AuthMiddleWare(), docHandler.EditDocument)
-	router.PUT("/documents/:id", auth.AuthMiddleWare(), docHandler.UpdateDocument)
+	router.GET("/documents/:id/state", auth.AuthMiddleWare(), docHandler.ShowDocumentState)
+	router.POST("/documents/:id/update", auth.AuthMiddleWare(), docHandler.CreateUpdate)
+	router.POST("/documents/:id/snapshot", auth.AuthMiddleWare(), docHandler.CreateSnapshot)
 
 	// Server configuration
 	serverPort := config.AppConfig.ServerPort

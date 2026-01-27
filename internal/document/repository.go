@@ -1,27 +1,21 @@
 package document
 
 import (
+	"context"
 	"time"
 
 	"gorm.io/gorm"
 )
 
-type DocumentsMeta struct {
-	Total       int64 `json:"total"`
-	CurrentPage int   `json:"current_page"`
-	PerPage     int   `json:"per_page"`
-	TotalPage   int   `json:"total_page"`
-}
 
-type DocumentsData struct {
-	Documents []Document
-	Meta      DocumentsMeta `json:"total_page"`
-}
 type DocumentRepository interface {
 	Create(userID uint64, document *Document) error
-	UpdateContent(id uint64, userID uint64, content []byte) error
-	GetByUserID(userID uint64, page, pageSize int) (DocumentsData, error)
+	CreateUpdate(id uint64, userID uint64, content []byte) error
+	GetByUserID(userID uint64, page, pageSize int) ([]Document, DocumentsMeta, error)
 	FindByID(id uint64) (*Document, error)
+	CreateSnapshot(ctx context.Context, docID uint64, state []byte) error
+	LastSnapshot(docID uint64, snapshot *DocumentSnapshot) error
+	UpdatesFromSnapshot(docID uint64, snapshotSeq uint64, updates *[]DocumentUpdate) error 
 }
 
 type DocumentRepositoryImpl struct {
@@ -48,7 +42,7 @@ func (r *DocumentRepositoryImpl) Create(userID uint64, document *Document) error
 	return r.db.Create(document).Error
 }
 
-func (r *DocumentRepositoryImpl) UpdateContent(id uint64, userID uint64, content []byte) error {
+func (r *DocumentRepositoryImpl) CreateUpdate(id uint64, userID uint64, content []byte) error {
     var seq uint64
 
 	err := r.db.Transaction(func(tx *gorm.DB) error {
@@ -81,13 +75,20 @@ func (r *DocumentRepositoryImpl) UpdateContent(id uint64, userID uint64, content
     return err
 }
 
-func (r *DocumentRepositoryImpl) GetByUserID(userID uint64, page, pageSize int) (DocumentsData, error) {
+type DocumentsMeta struct {
+	Total       int64 `json:"total"`
+	CurrentPage int   `json:"current_page"`
+	PerPage     int   `json:"per_page"`
+	TotalPage   int   `json:"total_page"`
+}
+
+func (r *DocumentRepositoryImpl) GetByUserID(userID uint64, page, pageSize int) ([]Document, DocumentsMeta, error) {
 	var documents []Document
 	var totalRecords int64
 
 	// Count total records
 	if err := r.db.Model(&Document{}).Where("user_id = ?", userID).Count(&totalRecords).Error; err != nil {
-		return DocumentsData{}, err
+		return documents, DocumentsMeta{}, err
 	}
 
 	offset := (page - 1) * pageSize
@@ -98,19 +99,64 @@ func (r *DocumentRepositoryImpl) GetByUserID(userID uint64, page, pageSize int) 
 
 	totalPages := int((totalRecords + int64(pageSize) - 1) / int64(pageSize))
 
-	return DocumentsData{
-		Documents: documents,
-		Meta: DocumentsMeta{
+	return documents, DocumentsMeta{
 			Total:       totalRecords,
 			PerPage:     pageSize,
 			TotalPage:   totalPages,
 			CurrentPage: page,
-		},
-	}, err
+		}, err
 }
 
 func (r *DocumentRepositoryImpl) FindByID(id uint64) (*Document, error) {
 	var doc Document
 	err := r.db.First(&doc, id).Error
 	return &doc, err
+}
+
+func (r *DocumentRepositoryImpl) CreateSnapshot(ctx context.Context, docID uint64, state []byte) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+
+		var lastSeq uint64
+
+		// Get latest update seq
+		if err := tx.Model(&DocumentUpdate{}).
+			Where("document_id = ?", docID).
+			Select("COALESCE(MAX(seq), 0)").
+			Scan(&lastSeq).Error; err != nil {
+			return err
+		}
+
+		snapshot := DocumentSnapshot{
+			DocumentID: 	docID,
+			Seq:    		lastSeq,
+			SnapshotBinary:	state,
+		}
+
+		if err := tx.Create(&snapshot).Error; err != nil {
+			return err
+		}
+
+		// // OPTIONAL: cleanup old updates
+		// if err := tx.
+		// 	Where("document_id = ? AND seq <= ?", docID, lastSeq).
+		// 	Delete(&DocumentUpdate{}).Error; err != nil {
+		// 	return err
+		// }
+
+		return nil
+	})
+	return err
+}
+
+func (r *DocumentRepositoryImpl) LastSnapshot(docID uint64, snapshot *DocumentSnapshot) error {
+	return r.db.Where("document_id = ?", docID).
+				Order("seq DESC").
+				First(&snapshot).Error
+}
+
+func (r *DocumentRepositoryImpl) UpdatesFromSnapshot(docID uint64, snapshotSeq uint64, updates *[]DocumentUpdate) error {
+	return r.db.Where("document_id = ? AND seq > ?", docID, snapshotSeq).
+				Order("seq ASC").
+				Limit(500).
+				Find(&updates).Error
 }
