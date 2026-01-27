@@ -2,12 +2,9 @@ package document
 
 import (
 	"collaborative-markdown-editor/internal/errors"
-	// "fmt"
 	"io"
-	// "log"
 	"net/http"
 	"strconv"
-	// "sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -89,6 +86,24 @@ func (h *Handler) ShowUserDocuments(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"data": docs, "meta": meta})
+}
+
+func (h *Handler) ShowDocument(c *gin.Context) {
+	docIDStr := c.Param("id")
+	docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)
+	
+	if err != nil {
+		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		return
+	}
+	
+	doc, err := h.service.GetDocumentByID(docIDUint)
+	if err != nil {
+		errors.HandleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, doc)
 }
 
 func (h *Handler) ShowDocumentState(c *gin.Context) {
