@@ -1,12 +1,19 @@
 package document
 
 import (
+	"collaborative-markdown-editor/internal/config"
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"time"
 )
 
 type Service interface {
 	CreateUserDocument(userID uint64, document *Document) error
-	CreateDocumentUpdate(id uint64, userID uint64, content []byte) error
+	CreateDocumentUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error
 	GetUserDocuments(userId uint64, page, pageSize int) ([]Document, DocumentsMeta, error)
 	GetDocumentByID(docID uint64) (*Document, error)
 	CreateSnapshot(ctx context.Context, docID uint64, state []byte) error
@@ -15,10 +22,14 @@ type Service interface {
 
 type DefaultService struct {
 	repository DocumentRepository
+	httpClient   *http.Client
 }
 
 func NewService(repository DocumentRepository) Service {
-	return &DefaultService{repository: repository}
+	return &DefaultService{
+			repository: repository,
+			httpClient: &http.Client{ Timeout: 5 * time.Second },
+	}
 }
 
 func (s *DefaultService) CreateUserDocument(userId uint64, document *Document) error {
@@ -26,9 +37,6 @@ func (s *DefaultService) CreateUserDocument(userId uint64, document *Document) e
 	return s.repository.Create(userId, document)
 }
 
-func (s *DefaultService) CreateDocumentUpdate(id uint64, userID uint64, content []byte) error {
-	return s.repository.CreateUpdate(id, userID, content)
-}
 
 type DocumentsData struct {
 	Documents []Document
@@ -50,8 +58,50 @@ func (s *DefaultService) GetDocumentByID(docID uint64) (*Document, error) {
 }
 
 // context to detect if connection is safe, and cancel downstream if fail
+func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error {
+	err := s.repository.CreateUpdate(id, userID, content)
+	if err != nil {
+		return err
+	}
+
+	if s.shouldSnapshot(id) {
+        state, err := s.fetchStateFromWS(ctx, id)
+        if err != nil {
+            return err
+        }
+
+		// cancel if the request timeout
+		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+
+        return s.repository.CreateSnapshot(ctx, id, state)
+    }
+
+    return nil
+}
+
+// context to detect if connection is safe, and cancel downstream if fail
 func (s *DefaultService) CreateSnapshot(ctx context.Context, docID uint64, state []byte) error {
 	return s.repository.CreateSnapshot(ctx, docID, state)
+}
+
+func (s *DefaultService) shouldSnapshot(docID uint64) bool {
+    const snapshotEvery = 200
+
+    var lastSnapshotSeq uint64
+    var currentSeq uint64
+
+	err := s.repository.LastSnapshotSeq(docID, &lastSnapshotSeq)
+	if err != nil {
+		return false
+	}
+
+	err = s.repository.CurrentSeq(docID, &currentSeq)
+	if err != nil {
+		return false
+	}
+	log.Println("curr seq", currentSeq)
+    return currentSeq - lastSnapshotSeq >= snapshotEvery
 }
 
 type DocumentUpdateDTO struct {

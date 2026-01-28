@@ -27,7 +27,6 @@ type DocumentUpdate struct {
 	Seq           uint64    `gorm:"not null;index:idx_doc_seq,priority:2"`
 	UpdateBinary  []byte    `gorm:"type:bytea;not null"`
 	UserID        uint64    `gorm:"not null;index"`
-	// ClientID      string    `gorm:"type:text"`
 	CreatedAt     time.Time
 }
 

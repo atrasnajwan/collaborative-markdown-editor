@@ -13,8 +13,10 @@ type DocumentRepository interface {
 	CreateUpdate(id uint64, userID uint64, content []byte) error
 	GetByUserID(userID uint64, page, pageSize int) ([]Document, DocumentsMeta, error)
 	FindByID(id uint64) (*Document, error)
+	CurrentSeq(docID uint64, currentSeq *uint64) error
 	CreateSnapshot(ctx context.Context, docID uint64, state []byte) error
 	LastSnapshot(docID uint64, snapshot *DocumentSnapshot) error
+	LastSnapshotSeq(docID uint64, lastSnapshotSeq *uint64) error
 	UpdatesFromSnapshot(docID uint64, snapshotSeq uint64, updates *[]DocumentUpdate) error 
 }
 
@@ -119,13 +121,27 @@ func (r *DocumentRepositoryImpl) CreateSnapshot(ctx context.Context, docID uint6
 		var lastSeq uint64
 
 		// Get latest update seq
-		if err := tx.Model(&DocumentUpdate{}).
-			Where("document_id = ?", docID).
-			Select("COALESCE(MAX(seq), 0)").
+		if err := tx.Model(&Document{}).
+			Where("id = ?", docID).
+			Select("update_seq").
 			Scan(&lastSeq).Error; err != nil {
 			return err
 		}
 
+		// check if already created
+		var exists bool
+		if err :=  tx.Model(&DocumentSnapshot{}).
+			Select("count(1) > 0").
+			Where("document_id = ? AND seq = ?", docID, lastSeq).
+			Find(&exists).Error; err != nil {
+			return err
+		}
+
+		if exists {
+			return nil // snapshot already exists
+		}
+		
+		// create snapshot
 		snapshot := DocumentSnapshot{
 			DocumentID: 	docID,
 			Seq:    		lastSeq,
@@ -136,22 +152,35 @@ func (r *DocumentRepositoryImpl) CreateSnapshot(ctx context.Context, docID uint6
 			return err
 		}
 
-		// // OPTIONAL: cleanup old updates
-		// if err := tx.
-		// 	Where("document_id = ? AND seq <= ?", docID, lastSeq).
-		// 	Delete(&DocumentUpdate{}).Error; err != nil {
-		// 	return err
-		// }
+		// cleanup old updates
+		if err := tx.Where("document_id = ? AND seq <= ?", docID, lastSeq).
+					 Delete(&DocumentUpdate{}).Error; err != nil {
+			return err
+		}
 
 		return nil
 	})
 	return err
 }
 
+func (r *DocumentRepositoryImpl) CurrentSeq(docID uint64, currentSeq *uint64) error {
+	return r.db.Model(&Document{}).
+				Where("id = ?", docID).
+				Select("update_seq").
+				Scan(currentSeq).Error
+}
+
 func (r *DocumentRepositoryImpl) LastSnapshot(docID uint64, snapshot *DocumentSnapshot) error {
 	return r.db.Where("document_id = ?", docID).
 				Order("seq DESC").
 				First(&snapshot).Error
+}
+
+func (r *DocumentRepositoryImpl) LastSnapshotSeq(docID uint64, lastSnapshotSeq *uint64) error {
+	return r.db.Model(&DocumentSnapshot{}).
+				Where("document_id = ?", docID).
+				Select("COALESCE(MAX(seq), 0)").
+				Scan(lastSnapshotSeq).Error
 }
 
 func (r *DocumentRepositoryImpl) UpdatesFromSnapshot(docID uint64, snapshotSeq uint64, updates *[]DocumentUpdate) error {
