@@ -160,3 +160,35 @@ func toDocumentUpdateDTOs(updates []DocumentUpdate) []DocumentUpdateDTO {
 
 	return dtos
 }
+
+type StateResponse struct {
+	Binary string `json:"binary"`
+}
+
+// call WS server to get current doc state
+func (s *DefaultService) fetchStateFromWS(ctx context.Context, docID uint64) ([]byte, error) {
+	url := fmt.Sprintf("%s/internal/documents/%d/state", config.AppConfig.WsServerAddress, docID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("node returned %d", resp.StatusCode)
+	}
+
+	var payload StateResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+
+	return base64.StdEncoding.DecodeString(payload.Binary)
+}
+

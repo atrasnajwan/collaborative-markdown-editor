@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
 )
 
 type Handler struct {
@@ -18,14 +17,6 @@ func NewHandler(service Service) *Handler {
 	return &Handler{service: service}
 }
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		// all origin
-		return true
-	},
-}
 type FormCreate struct {
 	Title   string `json:"Title" binding:"required"`
 }
@@ -144,6 +135,7 @@ func (h *Handler) CreateUpdate(c *gin.Context) {
 	}
 
 	err = h.service.CreateDocumentUpdate(
+		c.Request.Context(),
 		docID,
 		userID.(uint64),
 		updateBinary,	// raw Yjs binary
@@ -155,27 +147,3 @@ func (h *Handler) CreateUpdate(c *gin.Context) {
 
 	c.Status(http.StatusCreated)
 }
-
-func (h *Handler) CreateSnapshot(c *gin.Context) {
-	docIDStr := c.Param("id")
-	docID, err := strconv.ParseUint(docIDStr, 10, 64)
-	if err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err))
-		return
-	}
-
-	snapshot, err := io.ReadAll(c.Request.Body)
-	if err != nil || len(snapshot) == 0 {
-		errors.HandleError(c, errors.ErrInvalidInput(err))
-		return
-	}
-
-	err = h.service.CreateSnapshot(c.Request.Context(), docID, snapshot)
-	if err != nil {
-		errors.HandleError(c, err)
-		return
-	}
-
-	c.Status(http.StatusCreated)
-}
-
