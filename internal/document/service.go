@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 )
@@ -15,7 +14,7 @@ type Service interface {
 	CreateUserDocument(userID uint64, document *Document) error
 	CreateDocumentUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error
 	GetUserDocuments(userId uint64, page, pageSize int) ([]Document, DocumentsMeta, error)
-	GetDocumentByID(docID uint64) (*Document, error)
+	GetDocumentByID(docID uint64, userID uint64) (*DocumentShowResponse, error)
 	GetDocumentState(docID uint64) (*DocumentStateResponse, error)
 }
 
@@ -51,8 +50,37 @@ func (s *DefaultService) GetUserDocuments(userId uint64, page, pageSize int) ([]
 	return documents, meta, nil
 }
 
-func (s *DefaultService) GetDocumentByID(docID uint64) (*Document, error) {
-	return s.repository.FindByID(docID)
+type DocumentShowResponse struct {
+	ID			uint64		`json:"id"`
+	Title       string		`json:"title"`
+	CreatedAt	time.Time	`json:"created_at"`
+	UpdatedAt	time.Time	`json:"updated_at"`
+	Role		string		`json:"role"`
+}
+
+func (s *DefaultService) GetDocumentByID(docID uint64, userID uint64) (*DocumentShowResponse, error) {
+	doc, err := s.repository.FindByID(docID)
+	if err != nil {
+		return nil, err
+	}
+
+	var role string
+	err = s.repository.GetUserRole(docID, userID, &role)
+	if err != nil {
+		return nil, err
+	}
+	if role == "" {
+		role = "none"
+	}
+	
+	return &DocumentShowResponse{
+		ID:  		doc.ID,
+		Title: 		doc.Title,
+		Role: 		role,
+		CreatedAt: 	doc.CreatedAt,
+		UpdatedAt: 	doc.UpdatedAt,
+	}, nil
+}
 }
 
 // context to detect if connection is safe, and cancel downstream if fail
@@ -103,7 +131,6 @@ type DocumentUpdateDTO struct {
 }
 
 type DocumentStateResponse struct {
-	Title       string              `json:"title"`
 	Snapshot    []byte              `json:"snapshot"`
 	SnapshotSeq uint64              `json:"snapshot_seq"`
 	Updates     []DocumentUpdateDTO `json:"updates"`
@@ -128,13 +155,7 @@ func (s *DefaultService) GetDocumentState(docID uint64) (*DocumentStateResponse,
 		return nil, err
 	}
 
-	document, err := s.GetDocumentByID(docID)
-	if err != nil {
-		return nil, err
-	}
-
 	return &DocumentStateResponse{
-		Title:       document.Title,
 		Snapshot:    snapshotState,
 		SnapshotSeq: snapshotSeq,
 		Updates:     toDocumentUpdateDTOs(updates),

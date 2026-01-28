@@ -12,6 +12,7 @@ type DocumentRepository interface {
 	Create(userID uint64, document *Document) error
 	CreateUpdate(id uint64, userID uint64, content []byte) error
 	GetByUserID(userID uint64, page, pageSize int) ([]Document, DocumentsMeta, error)
+	GetUserRole(docID uint64, userID uint64, role *string) error
 	FindByID(id uint64) (*Document, error)
 	CurrentSeq(docID uint64, currentSeq *uint64) error
 	CreateSnapshot(ctx context.Context, docID uint64, state []byte) error
@@ -42,39 +43,6 @@ func (r *DocumentRepositoryImpl) Create(userID uint64, document *Document) error
 		},
 	}
 	return r.db.Create(document).Error
-}
-
-func (r *DocumentRepositoryImpl) CreateUpdate(id uint64, userID uint64, content []byte) error {
-    var seq uint64
-
-	err := r.db.Transaction(func(tx *gorm.DB) error {
-		now := time.Now().UTC()
-		// 1. increment sequence on document
-		if err := tx.Raw(`
-			UPDATE documents
-			SET update_seq = update_seq + 1,
-			    updated_at = ?
-			WHERE id = ?
-			RETURNING update_seq
-		`, now, id).Scan(&seq).Error; err != nil {
-			return err
-		}
-
-		// 2. Insert document update with the generated seq
-		if err := tx.Create(&DocumentUpdate{
-			DocumentID:   	id,
-			Seq:          	seq,
-			UpdateBinary: 	content,
-			UserID:       	userID,
-			CreatedAt: 		now,
-		}).Error; err != nil {
-			return err
-		}
-
-		return nil
-	})
-
-    return err
 }
 
 type DocumentsMeta struct {
@@ -113,6 +81,46 @@ func (r *DocumentRepositoryImpl) FindByID(id uint64) (*Document, error) {
 	var doc Document
 	err := r.db.First(&doc, id).Error
 	return &doc, err
+}
+
+func (r *DocumentRepositoryImpl) GetUserRole(docID uint64, userID uint64, role *string) error {
+	return r.db.Model(&DocumentCollaborator{}).
+				Where("document_id = ? AND user_id = ?", docID, userID).
+				Select("role").
+				Scan(role).Error
+}
+
+func (r *DocumentRepositoryImpl) CreateUpdate(id uint64, userID uint64, content []byte) error {
+    var seq uint64
+
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		now := time.Now().UTC()
+		// 1. increment sequence on document
+		if err := tx.Raw(`
+			UPDATE documents
+			SET update_seq = update_seq + 1,
+			    updated_at = ?
+			WHERE id = ?
+			RETURNING update_seq
+		`, now, id).Scan(&seq).Error; err != nil {
+			return err
+		}
+
+		// 2. Insert document update with the generated seq
+		if err := tx.Create(&DocumentUpdate{
+			DocumentID:   	id,
+			Seq:          	seq,
+			UpdateBinary: 	content,
+			UserID:       	userID,
+			CreatedAt: 		now,
+		}).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+    return err
 }
 
 func (r *DocumentRepositoryImpl) CreateSnapshot(ctx context.Context, docID uint64, state []byte) error {

@@ -85,7 +85,13 @@ func (h *Handler) ShowDocument(c *gin.Context) {
 		return
 	}
 	
-	doc, err := h.service.GetDocumentByID(docIDUint)
+	userID, exists := c.Get("user_id")
+	if !exists {
+		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
+		return
+	}
+
+	doc, err := h.service.GetDocumentByID(docIDUint, userID.(uint64))
 	if err != nil {
 		errors.HandleError(c, err)
 		return

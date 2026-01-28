@@ -38,7 +38,6 @@ type DocumentSnapshot struct {
 	CreatedAt      time.Time
 }
 
-
 type DocumentVersion struct {
 	ID          uint64    `gorm:"primaryKey;autoIncrement"`
 	DocumentID  uint64    `gorm:"not null;index"`
@@ -51,6 +50,6 @@ type DocumentVersion struct {
 type DocumentCollaborator struct {
 	DocumentID uint64 	`gorm:"primaryKey"`
 	UserID     uint64	`gorm:"primaryKey"`
-	Role       string    `gorm:"type:text;not null"`
+	Role       string   `gorm:"type:text;not null"`
 	AddedAt    time.Time
 }
