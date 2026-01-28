@@ -53,34 +53,18 @@ func AuthMiddleWare() gin.HandlerFunc {
 	}
 }
 
-func AuthWebSocketMiddleWare() gin.HandlerFunc {
+func InternalAuthMiddleware(secret string) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		// verify token
-		token := ctx.Query("token")
-		parsedToken, err := VerifyJWT(token)
-		if err != nil {
-			log.Println(err)
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-			return
-		}
-		
-		userID, err := GetUserIDFromToken(parsedToken)
-		if err != nil {
-			log.Println(err)
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		token := strings.TrimPrefix(
+			ctx.GetHeader("Authorization"),
+			"Bearer ",
+		)
+
+		if token != secret {
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized internal call!"})
 			return
 		}
 
-		// check on redis
-		exists, err := redis.RedisClient.Exists(redis.Ctx, token).Result()
-		if err != nil || exists == 0 {
-			log.Println(err)
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Token expired or not found"})
-			return
-		}
-
-		ctx.Set("user_id", userID)
-		ctx.Set("username", ctx.Query("userName"))
 		ctx.Next()
 	}
 }

@@ -20,9 +20,6 @@ func NewHandler(service Service) *Handler {
 type FormCreate struct {
 	Title   string `json:"Title" binding:"required"`
 }
-type FormSave struct {
-	Content string `json:"content" binding:"required"`
-}
 
 func (h *Handler) Create(c *gin.Context) {
 	var form FormCreate
@@ -122,9 +119,13 @@ func (h *Handler) CreateUpdate(c *gin.Context) {
 		errors.HandleError(c, errors.ErrInvalidInput(err))
 		return
 	}
-	userID, exists := c.Get("user_id")
-	if !exists {
-		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
+
+	userID, err := strconv.ParseUint(
+		c.GetHeader("X-User-Id"),
+		10, 64,
+	)
+	if err != nil {
+		errors.HandleError(c, errors.ErrInvalidInput(err))
 		return
 	}
 
@@ -137,7 +138,7 @@ func (h *Handler) CreateUpdate(c *gin.Context) {
 	err = h.service.CreateDocumentUpdate(
 		c.Request.Context(),
 		docID,
-		userID.(uint64),
+		userID,
 		updateBinary,	// raw Yjs binary
 	)
 	if err != nil {

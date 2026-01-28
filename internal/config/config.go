@@ -27,8 +27,11 @@ type Config struct {
 	// JWT configuration
 	JWTSecret string
 
-	// Websocket config
-	WsServerAddress string
+	// Sync server config
+	SyncServerAddress string
+
+	// internal secret used for communication between server
+	InternalSecret string
 }
 
 // Global application configuration
@@ -61,16 +64,17 @@ func LoadConfig() {
 	}
 
 	AppConfig = Config{
-		ServerPort:   		getEnv("PORT", "8080"),
-		Environment:  		getEnv("ENV", "development"),
-		DBHost:       		getEnv("DB_HOST", "localhost"),
-		DBPort:       		getEnv("DB_PORT", "5432"),
-		DBUser:       		getEnv("DB_USER", "postgres"),
-		DBPassword:   		getEnv("DB_PASSWORD", "postgres"),
-		DBName:       		getEnv("DB_NAME", "markdown_editor"),
-		RedisAddress: 		getEnv("REDIS_ADDRESS", "localhost:6379"),
-		WsServerAddress:	getEnv("WS_ADDRESS", "http://localhost:8787"),
-		JWTSecret:    		jwtSecret,
+		ServerPort:        getEnv("PORT", "8080"),
+		Environment:       getEnv("ENV", "development"),
+		DBHost:            getEnv("DB_HOST", "localhost"),
+		DBPort:            getEnv("DB_PORT", "5432"),
+		DBUser:            getEnv("DB_USER", "postgres"),
+		DBPassword:        getEnv("DB_PASSWORD", "postgres"),
+		DBName:            getEnv("DB_NAME", "markdown_editor"),
+		RedisAddress:      getEnv("REDIS_ADDRESS", "localhost:6379"),
+		SyncServerAddress: getEnv("SYNC_ADDRESS", "http://localhost:8787"),
+		JWTSecret:         jwtSecret,
+		InternalSecret:    getEnv("INTERNAL_SECRET", "collab-internal-secret"),
 	}
 }
 

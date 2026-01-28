@@ -75,8 +75,10 @@ func main() {
 	router.POST("/documents", auth.AuthMiddleWare(), docHandler.Create)
 	router.GET("/documents", auth.AuthMiddleWare(), docHandler.ShowUserDocuments)
 	router.GET("/documents/:id", auth.AuthMiddleWare(), docHandler.ShowDocument)
-	router.GET("/documents/:id/last-state", auth.AuthMiddleWare(), docHandler.ShowDocumentState)
-	router.POST("/documents/:id/update", auth.AuthMiddleWare(), docHandler.CreateUpdate)
+
+	// internal use routes
+	router.GET("/internal/documents/:id/last-state", auth.InternalAuthMiddleware(config.AppConfig.InternalSecret), docHandler.ShowDocumentState)
+	router.POST("/internal/documents/:id/update", auth.InternalAuthMiddleware(config.AppConfig.InternalSecret), docHandler.CreateUpdate)
 
 	// Server configuration
 	serverPort := config.AppConfig.ServerPort

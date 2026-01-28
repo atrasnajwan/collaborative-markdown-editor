@@ -16,19 +16,18 @@ type Service interface {
 	CreateDocumentUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error
 	GetUserDocuments(userId uint64, page, pageSize int) ([]Document, DocumentsMeta, error)
 	GetDocumentByID(docID uint64) (*Document, error)
-	CreateSnapshot(ctx context.Context, docID uint64, state []byte) error
 	GetDocumentState(docID uint64) (*DocumentStateResponse, error)
 }
 
 type DefaultService struct {
 	repository DocumentRepository
-	httpClient   *http.Client
+	httpClient *http.Client
 }
 
 func NewService(repository DocumentRepository) Service {
 	return &DefaultService{
-			repository: repository,
-			httpClient: &http.Client{ Timeout: 5 * time.Second },
+		repository: repository,
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 }
 
@@ -36,7 +35,6 @@ func (s *DefaultService) CreateUserDocument(userId uint64, document *Document) e
 	// Create document for user
 	return s.repository.Create(userId, document)
 }
-
 
 type DocumentsData struct {
 	Documents []Document
@@ -65,31 +63,26 @@ func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, id uint64, us
 	}
 
 	if s.shouldSnapshot(id) {
-        state, err := s.fetchStateFromWS(ctx, id)
-        if err != nil {
-            return err
-        }
+		state, err := s.fetchStateFromSyncServer(ctx, id)
+		if err != nil {
+			return err
+		}
 
 		// cancel if the request timeout
 		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
 
-        return s.repository.CreateSnapshot(ctx, id, state)
-    }
+		return s.repository.CreateSnapshot(ctx, id, state)
+	}
 
-    return nil
-}
-
-// context to detect if connection is safe, and cancel downstream if fail
-func (s *DefaultService) CreateSnapshot(ctx context.Context, docID uint64, state []byte) error {
-	return s.repository.CreateSnapshot(ctx, docID, state)
+	return nil
 }
 
 func (s *DefaultService) shouldSnapshot(docID uint64) bool {
     const snapshotEvery = 200
 
-    var lastSnapshotSeq uint64
-    var currentSeq uint64
+	var lastSnapshotSeq uint64
+	var currentSeq uint64
 
 	err := s.repository.LastSnapshotSeq(docID, &lastSnapshotSeq)
 	if err != nil {
@@ -100,8 +93,8 @@ func (s *DefaultService) shouldSnapshot(docID uint64) bool {
 	if err != nil {
 		return false
 	}
-	log.Println("curr seq", currentSeq)
-    return currentSeq - lastSnapshotSeq >= snapshotEvery
+
+	return currentSeq-lastSnapshotSeq >= snapshotEvery
 }
 
 type DocumentUpdateDTO struct {
@@ -136,9 +129,9 @@ func (s *DefaultService) GetDocumentState(docID uint64) (*DocumentStateResponse,
 	}
 
 	document, err := s.GetDocumentByID(docID)
-    if err != nil {
-        return nil, err
-    }
+	if err != nil {
+		return nil, err
+	}
 
 	return &DocumentStateResponse{
 		Title:       document.Title,
@@ -165,9 +158,9 @@ type StateResponse struct {
 	Binary string `json:"binary"`
 }
 
-// call WS server to get current doc state
-func (s *DefaultService) fetchStateFromWS(ctx context.Context, docID uint64) ([]byte, error) {
-	url := fmt.Sprintf("%s/internal/documents/%d/state", config.AppConfig.WsServerAddress, docID)
+// call sync server to get current doc state
+func (s *DefaultService) fetchStateFromSyncServer(ctx context.Context, docID uint64) ([]byte, error) {
+	url := fmt.Sprintf("%s/internal/documents/%d/state", config.AppConfig.SyncServerAddress, docID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -191,4 +184,3 @@ func (s *DefaultService) fetchStateFromWS(ctx context.Context, docID uint64) ([]
 
 	return base64.StdEncoding.DecodeString(payload.Binary)
 }
-
