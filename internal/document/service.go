@@ -16,6 +16,7 @@ type Service interface {
 	GetUserDocuments(userId uint64, page, pageSize int) ([]Document, DocumentsMeta, error)
 	GetDocumentByID(docID uint64, userID uint64) (*DocumentShowResponse, error)
 	GetDocumentState(docID uint64) (*DocumentStateResponse, error)
+	FetchUserRole(docID, userID uint64) (string, error)
 }
 
 type DefaultService struct {
@@ -65,7 +66,7 @@ func (s *DefaultService) GetDocumentByID(docID uint64, userID uint64) (*Document
 	}
 
 	var role string
-	err = s.repository.GetUserRole(docID, userID, &role)
+	role, err = s.repository.GetUserRole(docID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -81,6 +82,9 @@ func (s *DefaultService) GetDocumentByID(docID uint64, userID uint64) (*Document
 		UpdatedAt: 	doc.UpdatedAt,
 	}, nil
 }
+
+func (s *DefaultService) FetchUserRole(docID, userID uint64) (string, error) {
+	return s.repository.GetUserRole(docID, userID)
 }
 
 // context to detect if connection is safe, and cancel downstream if fail

@@ -99,6 +99,29 @@ func (h *Handler) ShowDocument(c *gin.Context) {
 
 	c.JSON(http.StatusOK, doc)
 }
+func (h *Handler) ShowUserRole(c *gin.Context) {
+	docIDStr := c.Param("id")
+	docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)
+	
+	if err != nil {
+		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		return
+	}
+	userIDStr := c.Query("user_id")
+	userIDUint, err := strconv.ParseUint(userIDStr, 10, 64)
+	if err != nil {
+		errors.HandleError(c, errors.ErrUnauthorized(err).WithMessage("user not found"))
+		return
+	}
+
+	role, err := h.service.FetchUserRole(docIDUint, userIDUint)
+	if err != nil {
+		errors.HandleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK,  gin.H{"role": role})
+}
 
 func (h *Handler) ShowDocumentState(c *gin.Context) {
 	docIDStr := c.Param("id")

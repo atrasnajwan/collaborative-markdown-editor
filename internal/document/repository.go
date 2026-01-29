@@ -12,7 +12,7 @@ type DocumentRepository interface {
 	Create(userID uint64, document *Document) error
 	CreateUpdate(id uint64, userID uint64, content []byte) error
 	GetByUserID(userID uint64, page, pageSize int) ([]Document, DocumentsMeta, error)
-	GetUserRole(docID uint64, userID uint64, role *string) error
+	GetUserRole(docID uint64, userID uint64) (string, error)
 	FindByID(id uint64) (*Document, error)
 	CurrentSeq(docID uint64, currentSeq *uint64) error
 	CreateSnapshot(ctx context.Context, docID uint64, state []byte) error
@@ -83,11 +83,17 @@ func (r *DocumentRepositoryImpl) FindByID(id uint64) (*Document, error) {
 	return &doc, err
 }
 
-func (r *DocumentRepositoryImpl) GetUserRole(docID uint64, userID uint64, role *string) error {
-	return r.db.Model(&DocumentCollaborator{}).
+func (r *DocumentRepositoryImpl) GetUserRole(docID uint64, userID uint64) (string, error) {
+	var role string
+	err := r.db.Model(&DocumentCollaborator{}).
 				Where("document_id = ? AND user_id = ?", docID, userID).
 				Select("role").
-				Scan(role).Error
+				Scan(&role).Error
+	if err != nil || role == "" {
+		return "none", err
+	}
+
+	return role, nil
 }
 
 func (r *DocumentRepositoryImpl) CreateUpdate(id uint64, userID uint64, content []byte) error {
