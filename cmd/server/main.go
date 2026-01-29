@@ -75,6 +75,7 @@ func main() {
 	router.POST("/documents", auth.AuthMiddleWare(), docHandler.Create)
 	router.GET("/documents", auth.AuthMiddleWare(), docHandler.ShowUserDocuments)
 	router.GET("/documents/:id", auth.AuthMiddleWare(), docHandler.ShowDocument)
+	router.GET("/documents/:id/collaborators", auth.AuthMiddleWare(), docHandler.ListCollaborators)
 
 	// internal use routes
 	router.GET("/internal/documents/:id/permission", auth.InternalAuthMiddleware(config.AppConfig.InternalSecret), docHandler.ShowUserRole)

@@ -17,6 +17,7 @@ type Service interface {
 	GetDocumentByID(docID uint64, userID uint64) (*DocumentShowResponse, error)
 	GetDocumentState(docID uint64) (*DocumentStateResponse, error)
 	FetchUserRole(docID, userID uint64) (string, error)
+	ListCollaborators(ctx context.Context, docID uint64, requesterID uint64) ([]DocumentCollaboratorDTO, error)
 }
 
 type DefaultService struct {
@@ -69,9 +70,6 @@ func (s *DefaultService) GetDocumentByID(docID uint64, userID uint64) (*Document
 	role, err = s.repository.GetUserRole(docID, userID)
 	if err != nil {
 		return nil, err
-	}
-	if role == "" {
-		role = "none"
 	}
 	
 	return &DocumentShowResponse{
@@ -209,3 +207,37 @@ func (s *DefaultService) fetchStateFromSyncServer(ctx context.Context, docID uin
 
 	return base64.StdEncoding.DecodeString(payload.Binary)
 }
+
+type UserDTO struct {
+	ID    uint64 `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+type DocumentCollaboratorDTO struct {
+	User UserDTO `json:"user"`
+	Role string  `json:"role"`
+}
+
+func (s *DefaultService) ListCollaborators(ctx context.Context, docID uint64, requesterID uint64) ([]DocumentCollaboratorDTO, error) {
+	rows, err := s.repository.ListDocumentCollaborators(ctx, docID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Map to API DTO
+	result := make([]DocumentCollaboratorDTO, 0, len(rows))
+	for _, r := range rows {
+		result = append(result, DocumentCollaboratorDTO{
+			User: UserDTO{
+				ID:    r.UserID,
+				Name:  r.Name,
+				Email: r.Email,
+			},
+			Role: r.Role,
+		})
+	}
+
+	return result, nil
+}
+

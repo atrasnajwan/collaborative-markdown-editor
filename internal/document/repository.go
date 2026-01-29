@@ -19,6 +19,7 @@ type DocumentRepository interface {
 	LastSnapshot(docID uint64, snapshot *DocumentSnapshot) error
 	LastSnapshotSeq(docID uint64, lastSnapshotSeq *uint64) error
 	UpdatesFromSnapshot(docID uint64, snapshotSeq uint64, updates *[]DocumentUpdate) error 
+	ListDocumentCollaborators(ctx context.Context, docID uint64) ([]collaboratorRow, error) 
 }
 
 type DocumentRepositoryImpl struct {
@@ -202,4 +203,30 @@ func (r *DocumentRepositoryImpl) UpdatesFromSnapshot(docID uint64, snapshotSeq u
 				Order("seq ASC").
 				Limit(500).
 				Find(&updates).Error
+}
+
+type collaboratorRow struct {
+	UserID uint64
+	Name   string
+	Email  string
+	Role   string
+}
+
+func (r *DocumentRepositoryImpl) ListDocumentCollaborators(ctx context.Context, docID uint64) ([]collaboratorRow, error) {
+	var rows []collaboratorRow
+
+	err := r.db.WithContext(ctx).
+		Table("document_collaborators dc").
+		Select(`
+			u.id   AS user_id,
+			u.name AS name,
+			u.email AS email,
+			dc.role AS role
+		`).
+		Joins("JOIN users u ON u.id = dc.user_id").
+		Where("dc.document_id = ?", docID).
+		Order("dc.added_at ASC").
+		Scan(&rows).Error
+
+	return rows, err
 }

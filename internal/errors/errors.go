@@ -50,6 +50,7 @@ func NewAppError(code int, message string, err error) *AppError {
 var (
 	ErrInvalidInput      = func(err error) *AppError { return NewAppError(http.StatusBadRequest, "Invalid input", err) }
 	ErrUnauthorized      = func(err error) *AppError { return NewAppError(http.StatusUnauthorized, "Unauthorized", err) }
+	ErrForbidden      	 = func(err error) *AppError { return NewAppError(http.StatusForbidden, "You're not allowed to do this!", err) }
 	ErrNotFound          = func(err error) *AppError { return NewAppError(http.StatusNotFound, "Resource not found", err) }
 	ErrInternalServer    = func(err error) *AppError { return NewAppError(http.StatusInternalServerError, "Internal server error", err) }
 	ErrUnprocessableEntity = func(err error) *AppError { return NewAppError(http.StatusUnprocessableEntity, "Unprocessable entity", err) }
@@ -66,4 +67,8 @@ func HandleError(c *gin.Context, err error) {
 	
 	// Default to internal server error
 	c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+}
+
+func Is(err error, target error) bool {
+	return errors.Is(err, target)
 }

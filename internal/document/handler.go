@@ -99,6 +99,7 @@ func (h *Handler) ShowDocument(c *gin.Context) {
 
 	c.JSON(http.StatusOK, doc)
 }
+
 func (h *Handler) ShowUserRole(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)
@@ -175,5 +176,42 @@ func (h *Handler) CreateUpdate(c *gin.Context) {
 		return
 	}
 
-	c.Status(http.StatusCreated)
+	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) ListCollaborators(c *gin.Context) {
+	docID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid document id"})
+		return
+	}
+
+	userID, exists := c.Get("user_id")
+	if !exists {
+		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
+		return
+	}
+
+	// viewer not allowed to
+	role, err := h.service.FetchUserRole(docID, userID.(uint64))
+	if err != nil {
+		errors.HandleError(c, errors.ErrInternalServer(err))
+		return
+	}
+	if role == "viwer" {
+		errors.HandleError(c, errors.ErrForbidden(err))
+			return
+	}
+
+	result, err := h.service.ListCollaborators(
+		c.Request.Context(),
+		docID,
+		userID.(uint64),
+	)
+	if err != nil {
+		errors.HandleError(c, errors.ErrInternalServer(err))
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
 }
