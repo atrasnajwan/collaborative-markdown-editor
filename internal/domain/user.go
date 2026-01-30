@@ -1,7 +1,6 @@
-package user
+package domain
 
 import (
-	"collaborative-markdown-editor/internal/document"
 	"time"
 )
 
@@ -15,7 +14,7 @@ type User struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	IsActive     bool `gorm:"default:true"`
-	Documents    []document.Document
+	Documents    []Document
 }
 
 // SafeUser represents a user without sensitive information

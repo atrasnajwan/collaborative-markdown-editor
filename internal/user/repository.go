@@ -1,12 +1,15 @@
 package user
 
-import "gorm.io/gorm"
+import (
+	"gorm.io/gorm"
+	"collaborative-markdown-editor/internal/domain"
+)
 
 // UserRepository defines the interface for user data access
 type UserRepository interface {
-	Create(user *User) error
-	FindByEmail(email string) (*User, error)
-	FindByID(id uint64) (*User, error)
+	Create(user *domain.User) error
+	FindByEmail(email string) (*domain.User, error)
+	FindByID(id uint64) (*domain.User, error)
 	Deactivate(id uint64) error
 }
 
@@ -21,13 +24,13 @@ func NewRepository(db *gorm.DB) UserRepository {
 }
 
 // Create creates a new user
-func (r *UserRepositoryImpl) Create(user *User) error {
+func (r *UserRepositoryImpl) Create(user *domain.User) error {
 	return r.db.Create(user).Error
 }
 
 // FindByEmail finds a user by email
-func (r *UserRepositoryImpl) FindByEmail(email string) (*User, error) {
-	var user User
+func (r *UserRepositoryImpl) FindByEmail(email string) (*domain.User, error) {
+	var user domain.User
 	err := r.db.Where("email = ?", email).First(&user).Error
 	if err != nil {
 		return nil, err
@@ -36,8 +39,8 @@ func (r *UserRepositoryImpl) FindByEmail(email string) (*User, error) {
 }
 
 // FindByID finds a user by ID
-func (r *UserRepositoryImpl) FindByID(id uint64) (*User, error) {
-	var user User
+func (r *UserRepositoryImpl) FindByID(id uint64) (*domain.User, error) {
+	var user domain.User
 	err := r.db.First(&user, id).Error
 	return &user, err
 }

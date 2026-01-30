@@ -1,6 +1,7 @@
 package document
 
 import (
+	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
 	"io"
 	"net/http"
@@ -17,12 +18,12 @@ func NewHandler(service Service) *Handler {
 	return &Handler{service: service}
 }
 
-type FormCreate struct {
+type CreateRequest struct {
 	Title   string `json:"Title" binding:"required"`
 }
 
 func (h *Handler) Create(c *gin.Context) {
-	var form FormCreate
+	var form CreateRequest
 	if err := c.ShouldBindJSON(&form); err != nil {
 		errors.HandleError(c, errors.ErrInvalidInput(err))
 		return
@@ -34,7 +35,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	doc := &Document{
+	doc := &domain.Document{
 		Title:   form.Title,
 	}
 
@@ -146,7 +147,7 @@ func (h *Handler) CreateUpdate(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docID, err := strconv.ParseUint(docIDStr, 10, 64)
 	if err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err))
+		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
 		return
 	}
 
@@ -182,7 +183,7 @@ func (h *Handler) CreateUpdate(c *gin.Context) {
 func (h *Handler) ListCollaborators(c *gin.Context) {
 	docID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid document id"})
+		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
 		return
 	}
 
@@ -192,24 +193,92 @@ func (h *Handler) ListCollaborators(c *gin.Context) {
 		return
 	}
 
-	// viewer not allowed to
-	role, err := h.service.FetchUserRole(docID, userID.(uint64))
-	if err != nil {
-		errors.HandleError(c, errors.ErrInternalServer(err))
-		return
-	}
-	if role == "viwer" {
-		errors.HandleError(c, errors.ErrForbidden(err))
-			return
-	}
-
 	result, err := h.service.ListCollaborators(
 		c.Request.Context(),
 		docID,
 		userID.(uint64),
 	)
 	if err != nil {
-		errors.HandleError(c, errors.ErrInternalServer(err))
+		errors.HandleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+type AddCollaboratorRequest struct {
+	UserID uint64 `json:"user_id" binding:"required"`
+	Role   string `json:"role" binding:"required,oneof=editor viewer"`
+}
+
+func (h *Handler) AddCollaborator(c *gin.Context) {
+	docID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		return
+	}
+
+	var req AddCollaboratorRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errors.HandleError(c, errors.ErrInvalidInput(err))
+		return
+	}
+
+	requesterID, exists := c.Get("user_id")
+	if !exists {
+		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
+		return
+	}
+
+	result, err := h.service.AddCollaborator(
+		c.Request.Context(),
+		docID,
+		requesterID.(uint64),
+		req.UserID,
+		req.Role,
+	)
+	if err != nil {
+		errors.HandleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusCreated, result)
+}
+
+type ChangeCollaboratorRoleRequest struct {
+	Role 			string `json:"role" binding:"required,oneof=editor viewer"`
+	TargetUserID 	uint64 `json:"user_id" binding:"required"`
+}
+
+func (h *Handler) ChangeCollaboratorRole(c *gin.Context) {
+	docID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		return
+	}
+
+	var req ChangeCollaboratorRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		errors.HandleError(c, errors.ErrInvalidInput(err))
+		return
+	}
+
+	requesterID, exists := c.Get("user_id")
+	if !exists {
+		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
+		return
+	}
+
+	result, err := h.service.ChangeCollaboratorRole(
+		c.Request.Context(),
+		docID,
+		requesterID.(uint64),
+		req.TargetUserID,
+		req.Role,
+	)
+
+	if err != nil {
+		errors.HandleError(c, err)
 		return
 	}
 

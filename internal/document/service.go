@@ -2,51 +2,63 @@ package document
 
 import (
 	"collaborative-markdown-editor/internal/config"
+	"collaborative-markdown-editor/internal/domain"
+	"collaborative-markdown-editor/internal/errors"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type Service interface {
-	CreateUserDocument(userID uint64, document *Document) error
+	CreateUserDocument(userID uint64, document *domain.Document) error
 	CreateDocumentUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error
-	GetUserDocuments(userId uint64, page, pageSize int) ([]Document, DocumentsMeta, error)
+	GetUserDocuments(userId uint64, page, pageSize int) ([]domain.Document, DocumentsMeta, error)
 	GetDocumentByID(docID uint64, userID uint64) (*DocumentShowResponse, error)
 	GetDocumentState(docID uint64) (*DocumentStateResponse, error)
 	FetchUserRole(docID, userID uint64) (string, error)
 	ListCollaborators(ctx context.Context, docID uint64, requesterID uint64) ([]DocumentCollaboratorDTO, error)
+	AddCollaborator(ctx context.Context, docID uint64, requesterID uint64, targetUserID uint64, role string) (*DocumentCollaboratorDTO, error)
+	ChangeCollaboratorRole(ctx context.Context, docID uint64, requesterID uint64, targetUserID uint64, newRole string) (*DocumentCollaboratorDTO, error)
+}
+
+type UserProvider interface {
+    GetUserByID(id uint64) (*domain.User, error)
 }
 
 type DefaultService struct {
 	repository DocumentRepository
 	httpClient *http.Client
+	userProvider UserProvider 
 }
 
-func NewService(repository DocumentRepository) Service {
+func NewService(repository DocumentRepository, userProvider UserProvider) Service {
 	return &DefaultService{
 		repository: repository,
 		httpClient: &http.Client{Timeout: 5 * time.Second},
+		userProvider: userProvider,
 	}
 }
 
-func (s *DefaultService) CreateUserDocument(userId uint64, document *Document) error {
+func (s *DefaultService) CreateUserDocument(userId uint64, document *domain.Document) error {
 	// Create document for user
 	return s.repository.Create(userId, document)
 }
 
 type DocumentsData struct {
-	Documents []Document
+	Documents []domain.Document
 	Meta      DocumentsMeta `json:"total_page"`
 }
 
-func (s *DefaultService) GetUserDocuments(userId uint64, page, pageSize int) ([]Document, DocumentsMeta, error) {
+func (s *DefaultService) GetUserDocuments(userId uint64, page, pageSize int) ([]domain.Document, DocumentsMeta, error) {
 	documents, meta, err := s.repository.GetByUserID(userId, page, pageSize)
 
 	if err != nil {
-		return []Document{}, DocumentsMeta{}, err
+		return []domain.Document{}, DocumentsMeta{}, err
 	}
 
 	return documents, meta, nil
@@ -140,7 +152,7 @@ type DocumentStateResponse struct {
 
 func (s *DefaultService) GetDocumentState(docID uint64) (*DocumentStateResponse, error) {
 
-	var snapshot DocumentSnapshot
+	var snapshot domain.DocumentSnapshot
 	err := s.repository.LastSnapshot(docID, &snapshot)
 
 	var snapshotSeq uint64
@@ -151,7 +163,7 @@ func (s *DefaultService) GetDocumentState(docID uint64) (*DocumentStateResponse,
 		snapshotState = snapshot.SnapshotBinary
 	}
 
-	var updates []DocumentUpdate
+	var updates []domain.DocumentUpdate
 	err = s.repository.UpdatesFromSnapshot(docID, snapshotSeq, &updates)
 	if err != nil {
 		return nil, err
@@ -164,7 +176,7 @@ func (s *DefaultService) GetDocumentState(docID uint64) (*DocumentStateResponse,
 	}, nil
 }
 
-func toDocumentUpdateDTOs(updates []DocumentUpdate) []DocumentUpdateDTO {
+func toDocumentUpdateDTOs(updates []domain.DocumentUpdate) []DocumentUpdateDTO {
 	dtos := make([]DocumentUpdateDTO, 0, len(updates))
 
 	for _, u := range updates {
@@ -225,6 +237,15 @@ func (s *DefaultService) ListCollaborators(ctx context.Context, docID uint64, re
 		return nil, err
 	}
 
+	// viewer not allowed to
+	role, err := s.FetchUserRole(docID, requesterID)
+	if err != nil {
+		return nil, err
+	}
+	if role == "viewer" {
+		return nil, errors.ErrForbidden(nil)
+	}
+
 	// Map to API DTO
 	result := make([]DocumentCollaboratorDTO, 0, len(rows))
 	for _, r := range rows {
@@ -240,4 +261,100 @@ func (s *DefaultService) ListCollaborators(ctx context.Context, docID uint64, re
 
 	return result, nil
 }
+
+func (s *DefaultService) AddCollaborator(
+	ctx context.Context,
+	docID uint64,
+	requesterID uint64,
+	targetUserID uint64,
+	role string,
+) (*DocumentCollaboratorDTO, error) {
+	// only owner can add
+	requesterRole, err := s.repository.GetUserRole(docID, requesterID)
+	if err != nil || requesterRole != "owner" {
+		return nil, errors.ErrForbidden(nil)
+	}
+
+	// Prevent self-add
+	if requesterID == targetUserID {
+		return nil, errors.ErrInvalidInput(nil).WithMessage("can't add yourself")
+	}
+
+	// Ensure target user exists
+	user, err := s.userProvider.GetUserByID(targetUserID)
+	if err != nil {
+		return nil, errors.ErrInvalidInput(nil).WithMessage("can't find user")
+	}
+
+	if err := s.repository.AddCollaborator(ctx, docID, targetUserID, role); err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, errors.ErrAlreadyExists(nil).WithMessage("user already added")
+		}
+		return nil, err
+	}
+
+	// 5. Response DTO
+	return &DocumentCollaboratorDTO{
+		User: UserDTO{
+			ID:    user.ID,
+			Name:  user.Name,
+			Email: user.Email,
+		},
+		Role: role,
+	}, nil
+}
+
+func (s *DefaultService) ChangeCollaboratorRole(
+	ctx context.Context,
+	docID uint64,
+	requesterID uint64,
+	targetUserID uint64,
+	newRole string,
+) (*DocumentCollaboratorDTO, error) {
+	// must be owner
+	requesterRole, err := s.repository.GetUserRole(docID, requesterID)
+	if err != nil || requesterRole != "owner" {
+		return nil, errors.ErrForbidden(nil)
+	}
+
+	// Prevent self-demotion
+	if requesterID == targetUserID {
+		return nil, errors.ErrInvalidInput(nil).WithMessage("can't add yourself")
+	}
+
+	// Ensure target collaborator exists
+	currentRole, err := s.repository.GetUserRole(docID, targetUserID)
+	if err != nil {
+		return nil, errors.ErrInvalidInput(nil).WithMessage("can't find user")
+	}
+
+	//  No-op check
+	if currentRole == newRole {
+		return nil, errors.ErrUnprocessableEntity(nil).WithMessage("user role already match")
+	}
+
+	if err := s.repository.UpdateCollaboratorRole(
+		ctx,
+		docID,
+		targetUserID,
+		newRole,
+	); err != nil {
+		return nil, err
+	}
+
+	user, err := s.userProvider.GetUserByID(targetUserID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DocumentCollaboratorDTO{
+		User: UserDTO{
+			ID:    user.ID,
+			Name:  user.Name,
+			Email: user.Email,
+		},
+		Role: newRole,
+	}, nil
+}
+
 

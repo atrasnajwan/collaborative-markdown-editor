@@ -2,6 +2,7 @@ package user
 
 import (
 	"collaborative-markdown-editor/auth"
+	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
 	"collaborative-markdown-editor/redis"
 	"net/http"
@@ -41,7 +42,7 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	user := &User{
+	user := &domain.User{
 		Name:     form.Name,
 		Email:    form.Email,
 		Password: form.Password,

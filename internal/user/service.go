@@ -1,6 +1,7 @@
 package user
 
 import (
+	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
 
 	"golang.org/x/crypto/bcrypt"
@@ -9,9 +10,9 @@ import (
 
 // Service defines the interface for user business logic
 type Service interface {
-	Register(user *User) error
-	Login(email, password string) (*User, error)
-	GetUserByID(id uint64) (*User, error)
+	Register(user *domain.User) error
+	Login(email, password string) (*domain.User, error)
+	GetUserByID(id uint64) (*domain.User, error)
 	DeactivateUser(id uint64) error
 }
 
@@ -26,7 +27,7 @@ func NewService(repository UserRepository) Service {
 }
 
 // Register registers a new user
-func (s *DefaultService) Register(user *User) error {
+func (s *DefaultService) Register(user *domain.User) error {
 	// Check if user with email already exists
 	_, err := s.repository.FindByEmail(user.Email)
 	if err != nil && err != gorm.ErrRecordNotFound {
@@ -49,7 +50,7 @@ func (s *DefaultService) Register(user *User) error {
 }
 
 // Login authenticates a user
-func (s *DefaultService) Login(email, password string) (*User, error) {
+func (s *DefaultService) Login(email, password string) (*domain.User, error) {
 	// Find user by email
 	user, err := s.repository.FindByEmail(email)
 	if err != nil {
@@ -71,7 +72,7 @@ func (s *DefaultService) Login(email, password string) (*User, error) {
 }
 
 // GetUserByID gets a user by ID
-func (s *DefaultService) GetUserByID(id uint64) (*User, error) {
+func (s *DefaultService) GetUserByID(id uint64) (*domain.User, error) {
 	return s.repository.FindByID(id)
 }
 

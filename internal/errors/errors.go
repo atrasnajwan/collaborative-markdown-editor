@@ -54,6 +54,7 @@ var (
 	ErrNotFound          = func(err error) *AppError { return NewAppError(http.StatusNotFound, "Resource not found", err) }
 	ErrInternalServer    = func(err error) *AppError { return NewAppError(http.StatusInternalServerError, "Internal server error", err) }
 	ErrUnprocessableEntity = func(err error) *AppError { return NewAppError(http.StatusUnprocessableEntity, "Unprocessable entity", err) }
+	ErrAlreadyExists 	= func(err error) *AppError { return NewAppError(http.StatusConflict, "Conflict data", err) }
 )
 
 // HandleError handles an error and responds with the appropriate status code and message

@@ -42,7 +42,7 @@ func main() {
 	docRepo := document.NewRepository(db.AppDb)
 	// Initialize service
 	userService := user.NewService(userRepo)
-	docService := document.NewService(docRepo)
+	docService := document.NewService(docRepo, userService)
 	// Initialize handler
 	docHandler := document.NewHandler(docService)
 	userHandler := user.NewHandler(userService)
@@ -76,6 +76,7 @@ func main() {
 	router.GET("/documents", auth.AuthMiddleWare(), docHandler.ShowUserDocuments)
 	router.GET("/documents/:id", auth.AuthMiddleWare(), docHandler.ShowDocument)
 	router.GET("/documents/:id/collaborators", auth.AuthMiddleWare(), docHandler.ListCollaborators)
+	router.POST("/documents/:id/collaborators", auth.AuthMiddleWare(), docHandler.AddCollaborator)
 
 	// internal use routes
 	router.GET("/internal/documents/:id/permission", auth.InternalAuthMiddleware(config.AppConfig.InternalSecret), docHandler.ShowUserRole)

@@ -1,7 +1,7 @@
 package db
 
 import (
-	"collaborative-markdown-editor/internal/document"
+	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/user"
 	"log"
 )
@@ -9,12 +9,12 @@ import (
 // Migrate runs database migrations
 func Migrate() {
 	err := AppDb.AutoMigrate(
-		&user.User{},
-		&document.Document{},
-		&document.DocumentUpdate{},
-		&document.DocumentSnapshot{},
-		&document.DocumentVersion{},
-		&document.DocumentCollaborator{},
+		&domain.User{},
+		&domain.Document{},
+		&domain.DocumentUpdate{},
+		&domain.DocumentSnapshot{},
+		&domain.DocumentVersion{},
+		&domain.DocumentCollaborator{},
 	)
 
 	if err != nil {
@@ -42,7 +42,7 @@ func SeedData() {
 	// Create a test user if it doesn't exist
 	userRepo := user.NewRepository(AppDb)
 	
-	testUser := &user.User{
+	testUser := &domain.User{
 		Name:     "Test User",
 		Email:    "test@example.com",
 		Password: "password123",
