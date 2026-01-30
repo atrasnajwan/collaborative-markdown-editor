@@ -284,3 +284,39 @@ func (h *Handler) ChangeCollaboratorRole(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
+
+func (h *Handler) RemoveCollaborator(c *gin.Context) {
+	docID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		return
+	}
+
+	targetUserID, err := strconv.ParseUint(c.Param("userId"), 10, 64)
+	if err != nil {
+		errors.ErrInvalidInput(err).WithMessage("invalid target user id")
+		return
+	}
+
+	requesterID, exists := c.Get("user_id")
+	if !exists {
+		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
+		return
+	}
+
+	err = h.service.RemoveCollaborator(
+		c.Request.Context(),
+		docID,
+		requesterID.(uint64),
+		targetUserID,
+	)
+
+	if err != nil {
+		errors.HandleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "collaborator removed",
+	})
+}

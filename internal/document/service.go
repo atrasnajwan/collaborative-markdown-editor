@@ -24,6 +24,7 @@ type Service interface {
 	ListCollaborators(ctx context.Context, docID uint64, requesterID uint64) ([]DocumentCollaboratorDTO, error)
 	AddCollaborator(ctx context.Context, docID uint64, requesterID uint64, targetUserID uint64, role string) (*DocumentCollaboratorDTO, error)
 	ChangeCollaboratorRole(ctx context.Context, docID uint64, requesterID uint64, targetUserID uint64, newRole string) (*DocumentCollaboratorDTO, error)
+	RemoveCollaborator(ctx context.Context, docID uint64, requesterID uint64, targetUserID uint64) error
 }
 
 type UserProvider interface {
@@ -357,4 +358,31 @@ func (s *DefaultService) ChangeCollaboratorRole(
 	}, nil
 }
 
+func (s *DefaultService) RemoveCollaborator(
+	ctx context.Context,
+	docID uint64,
+	requesterID uint64,
+	targetUserID uint64,
+) error {
+	// must be owner
+	requesterRole, err := s.repository.GetUserRole(ctx, docID, requesterID)
+	if err != nil || requesterRole != "owner" {
+		return errors.ErrForbidden(nil)
+	}
 
+	// Prevent owner removing themselves
+	if requesterID == targetUserID {
+		return errors.ErrInvalidInput(nil).WithMessage("can't remove yourself")
+	}
+
+	// Ensure target exists
+	if _, err := s.repository.GetUserRole(docID, targetUserID); err != nil {
+		return errors.ErrInvalidInput(nil).WithMessage("can't find user")
+	}
+
+	if err := s.repository.RemoveCollaborator(ctx, docID, targetUserID); err != nil {
+		return err
+	}
+
+	return nil
+}

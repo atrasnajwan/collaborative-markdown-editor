@@ -23,6 +23,7 @@ type DocumentRepository interface {
 	ListDocumentCollaborators(ctx context.Context, docID uint64) ([]collaboratorRow, error)
 	AddCollaborator(ctx context.Context, docID uint64, userID uint64, role string) error
 	UpdateCollaboratorRole(ctx context.Context, docID uint64, userID uint64, role string) error
+	RemoveCollaborator(ctx context.Context, docID uint64, userID uint64) error 
 }
 
 type DocumentRepositoryImpl struct {
@@ -250,6 +251,21 @@ func (r *DocumentRepositoryImpl) UpdateCollaboratorRole(ctx context.Context, doc
 		Model(&domain.DocumentCollaborator{}).
 		Where("document_id = ? AND user_id = ?", docID, userID).
 		Update("role", role)
+
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+
+	return nil
+}
+
+func (r *DocumentRepositoryImpl) RemoveCollaborator(ctx context.Context, docID uint64, userID uint64) error {
+	result := r.db.WithContext(ctx).
+		Where("document_id = ? AND user_id = ?", docID, userID).
+		Delete(&domain.DocumentCollaborator{})
 
 	if result.Error != nil {
 		return result.Error
