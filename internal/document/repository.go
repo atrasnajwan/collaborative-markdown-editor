@@ -8,22 +8,21 @@ import (
 	"gorm.io/gorm"
 )
 
-
 type DocumentRepository interface {
 	Create(userID uint64, document *domain.Document) error
 	CreateUpdate(id uint64, userID uint64, content []byte) error
-	GetByUserID(userID uint64, page, pageSize int) ([]domain.Document, DocumentsMeta, error)
+	ListDocumentByUserID(userID uint64, page, pageSize int) ([]domain.Document, DocumentsMeta, error)
 	GetUserRole(docID uint64, userID uint64) (string, error)
 	FindByID(id uint64) (*domain.Document, error)
 	CurrentSeq(docID uint64, currentSeq *uint64) error
 	CreateSnapshot(ctx context.Context, docID uint64, state []byte) error
 	LastSnapshot(docID uint64, snapshot *domain.DocumentSnapshot) error
 	LastSnapshotSeq(docID uint64, lastSnapshotSeq *uint64) error
-	UpdatesFromSnapshot(docID uint64, snapshotSeq uint64, updates *[]domain.DocumentUpdate) error 
+	UpdatesFromSnapshot(docID uint64, snapshotSeq uint64, updates *[]domain.DocumentUpdate) error
 	ListDocumentCollaborators(ctx context.Context, docID uint64) ([]collaboratorRow, error)
 	AddCollaborator(ctx context.Context, docID uint64, userID uint64, role string) error
 	UpdateCollaboratorRole(ctx context.Context, docID uint64, userID uint64, role string) error
-	RemoveCollaborator(ctx context.Context, docID uint64, userID uint64) error 
+	RemoveCollaborator(ctx context.Context, docID uint64, userID uint64) error
 }
 
 type DocumentRepositoryImpl struct {
@@ -57,7 +56,7 @@ type DocumentsMeta struct {
 	TotalPage   int   `json:"total_page"`
 }
 
-func (r *DocumentRepositoryImpl) GetByUserID(userID uint64, page, pageSize int) ([]domain.Document, DocumentsMeta, error) {
+func (r *DocumentRepositoryImpl) ListDocumentByUserID(userID uint64, page, pageSize int) ([]domain.Document, DocumentsMeta, error) {
 	var documents []domain.Document
 	var totalRecords int64
 
@@ -70,16 +69,17 @@ func (r *DocumentRepositoryImpl) GetByUserID(userID uint64, page, pageSize int) 
 	err := r.db.Where("user_id = ?", userID).
 		Offset(offset).
 		Limit(pageSize).
+		Order("updated_at desc").
 		Find(&documents).Error
 
 	totalPages := int((totalRecords + int64(pageSize) - 1) / int64(pageSize))
 
 	return documents, DocumentsMeta{
-			Total:       totalRecords,
-			PerPage:     pageSize,
-			TotalPage:   totalPages,
-			CurrentPage: page,
-		}, err
+		Total:       totalRecords,
+		PerPage:     pageSize,
+		TotalPage:   totalPages,
+		CurrentPage: page,
+	}, err
 }
 
 func (r *DocumentRepositoryImpl) FindByID(id uint64) (*domain.Document, error) {
@@ -91,9 +91,9 @@ func (r *DocumentRepositoryImpl) FindByID(id uint64) (*domain.Document, error) {
 func (r *DocumentRepositoryImpl) GetUserRole(docID uint64, userID uint64) (string, error) {
 	var role string
 	err := r.db.Model(&domain.DocumentCollaborator{}).
-				Where("document_id = ? AND user_id = ?", docID, userID).
-				Select("role").
-				Scan(&role).Error
+		Where("document_id = ? AND user_id = ?", docID, userID).
+		Select("role").
+		Scan(&role).Error
 	if err != nil || role == "" {
 		return "none", err
 	}
@@ -102,7 +102,7 @@ func (r *DocumentRepositoryImpl) GetUserRole(docID uint64, userID uint64) (strin
 }
 
 func (r *DocumentRepositoryImpl) CreateUpdate(id uint64, userID uint64, content []byte) error {
-    var seq uint64
+	var seq uint64
 
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		now := time.Now().UTC()
@@ -119,11 +119,11 @@ func (r *DocumentRepositoryImpl) CreateUpdate(id uint64, userID uint64, content 
 
 		// 2. Insert document update with the generated seq
 		if err := tx.Create(&domain.DocumentUpdate{
-			DocumentID:   	id,
-			Seq:          	seq,
-			UpdateBinary: 	content,
-			UserID:       	userID,
-			CreatedAt: 		now,
+			DocumentID:   id,
+			Seq:          seq,
+			UpdateBinary: content,
+			UserID:       userID,
+			CreatedAt:    now,
 		}).Error; err != nil {
 			return err
 		}
@@ -131,7 +131,7 @@ func (r *DocumentRepositoryImpl) CreateUpdate(id uint64, userID uint64, content 
 		return nil
 	})
 
-    return err
+	return err
 }
 
 func (r *DocumentRepositoryImpl) CreateSnapshot(ctx context.Context, docID uint64, state []byte) error {
@@ -149,7 +149,7 @@ func (r *DocumentRepositoryImpl) CreateSnapshot(ctx context.Context, docID uint6
 
 		// check if already created
 		var exists bool
-		if err :=  tx.Model(&domain.DocumentSnapshot{}).
+		if err := tx.Model(&domain.DocumentSnapshot{}).
 			Select("count(1) > 0").
 			Where("document_id = ? AND seq = ?", docID, lastSeq).
 			Find(&exists).Error; err != nil {
@@ -159,12 +159,12 @@ func (r *DocumentRepositoryImpl) CreateSnapshot(ctx context.Context, docID uint6
 		if exists {
 			return nil // snapshot already exists
 		}
-		
+
 		// create snapshot
 		snapshot := domain.DocumentSnapshot{
-			DocumentID: 	docID,
-			Seq:    		lastSeq,
-			SnapshotBinary:	state,
+			DocumentID:     docID,
+			Seq:            lastSeq,
+			SnapshotBinary: state,
 		}
 
 		if err := tx.Create(&snapshot).Error; err != nil {
@@ -173,7 +173,7 @@ func (r *DocumentRepositoryImpl) CreateSnapshot(ctx context.Context, docID uint6
 
 		// cleanup old updates
 		if err := tx.Where("document_id = ? AND seq <= ?", docID, lastSeq).
-					 Delete(&domain.DocumentUpdate{}).Error; err != nil {
+			Delete(&domain.DocumentUpdate{}).Error; err != nil {
 			return err
 		}
 
@@ -184,29 +184,29 @@ func (r *DocumentRepositoryImpl) CreateSnapshot(ctx context.Context, docID uint6
 
 func (r *DocumentRepositoryImpl) CurrentSeq(docID uint64, currentSeq *uint64) error {
 	return r.db.Model(&domain.Document{}).
-				Where("id = ?", docID).
-				Select("update_seq").
-				Scan(currentSeq).Error
+		Where("id = ?", docID).
+		Select("update_seq").
+		Scan(currentSeq).Error
 }
 
 func (r *DocumentRepositoryImpl) LastSnapshot(docID uint64, snapshot *domain.DocumentSnapshot) error {
 	return r.db.Where("document_id = ?", docID).
-				Order("seq DESC").
-				First(&snapshot).Error
+		Order("seq DESC").
+		First(&snapshot).Error
 }
 
 func (r *DocumentRepositoryImpl) LastSnapshotSeq(docID uint64, lastSnapshotSeq *uint64) error {
 	return r.db.Model(&domain.DocumentSnapshot{}).
-				Where("document_id = ?", docID).
-				Select("COALESCE(MAX(seq), 0)").
-				Scan(lastSnapshotSeq).Error
+		Where("document_id = ?", docID).
+		Select("COALESCE(MAX(seq), 0)").
+		Scan(lastSnapshotSeq).Error
 }
 
 func (r *DocumentRepositoryImpl) UpdatesFromSnapshot(docID uint64, snapshotSeq uint64, updates *[]domain.DocumentUpdate) error {
 	return r.db.Where("document_id = ? AND seq > ?", docID, snapshotSeq).
-				Order("seq ASC").
-				Limit(500).
-				Find(&updates).Error
+		Order("seq ASC").
+		Limit(500).
+		Find(&updates).Error
 }
 
 type collaboratorRow struct {

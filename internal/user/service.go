@@ -3,6 +3,8 @@ package user
 import (
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
+	"context"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -14,6 +16,7 @@ type Service interface {
 	Login(email, password string) (*domain.User, error)
 	GetUserByID(id uint64) (*domain.User, error)
 	DeactivateUser(id uint64) error
+	SearchUsers(ctx context.Context, query string) ([]domain.SafeUser, error)
 }
 
 // DefaultService implements Service
@@ -79,4 +82,27 @@ func (s *DefaultService) GetUserByID(id uint64) (*domain.User, error) {
 // DeactivateUser deactivates a user
 func (s *DefaultService) DeactivateUser(id uint64) error {
 	return s.repository.Deactivate(id)
+}
+
+func (s *DefaultService) SearchUsers(ctx context.Context, query string) ([]domain.SafeUser, error) {
+	query = strings.TrimSpace(query)
+	if len(query) < 2 {
+		return []domain.SafeUser{}, nil
+	}
+
+	users, err := s.repository.SearchUsers(ctx, query, 10)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]domain.SafeUser, 0, len(users))
+	for _, u := range users {
+		result = append(result, domain.SafeUser{
+			ID:    u.ID,
+			Name:  u.Name,
+			Email: u.Email,
+		})
+	}
+
+	return result, nil
 }

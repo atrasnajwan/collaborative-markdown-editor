@@ -72,6 +72,7 @@ func main() {
 	router.POST("/login", userHandler.Login)
 	router.DELETE("/logout", auth.AuthMiddleWare(), userHandler.Logout)
 	router.GET("/profile", auth.AuthMiddleWare(), userHandler.GetProfile)
+	router.GET("/users", auth.AuthMiddleWare(), userHandler.SearchUsers)
 	router.POST("/documents", auth.AuthMiddleWare(), docHandler.Create)
 	router.GET("/documents", auth.AuthMiddleWare(), docHandler.ShowUserDocuments)
 	router.GET("/documents/:id", auth.AuthMiddleWare(), docHandler.ShowDocument)

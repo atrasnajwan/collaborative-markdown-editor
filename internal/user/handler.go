@@ -113,3 +113,18 @@ func (h *Handler) GetProfile(c *gin.Context) {
 
 	c.JSON(http.StatusOK, user.ToSafeUser())
 }
+
+func (h *Handler) SearchUsers(c *gin.Context) {
+	query := c.Query("q")
+
+	users, err := h.service.SearchUsers(
+		c.Request.Context(),
+		query,
+	)
+	if err != nil {
+		errors.HandleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, users)
+}

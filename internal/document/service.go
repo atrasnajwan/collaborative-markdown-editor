@@ -28,19 +28,19 @@ type Service interface {
 }
 
 type UserProvider interface {
-    GetUserByID(id uint64) (*domain.User, error)
+	GetUserByID(id uint64) (*domain.User, error)
 }
 
 type DefaultService struct {
-	repository DocumentRepository
-	httpClient *http.Client
-	userProvider UserProvider 
+	repository   DocumentRepository
+	httpClient   *http.Client
+	userProvider UserProvider
 }
 
 func NewService(repository DocumentRepository, userProvider UserProvider) Service {
 	return &DefaultService{
-		repository: repository,
-		httpClient: &http.Client{Timeout: 5 * time.Second},
+		repository:   repository,
+		httpClient:   &http.Client{Timeout: 5 * time.Second},
 		userProvider: userProvider,
 	}
 }
@@ -56,7 +56,7 @@ type DocumentsData struct {
 }
 
 func (s *DefaultService) GetUserDocuments(userId uint64, page, pageSize int) ([]domain.Document, DocumentsMeta, error) {
-	documents, meta, err := s.repository.GetByUserID(userId, page, pageSize)
+	documents, meta, err := s.repository.ListDocumentByUserID(userId, page, pageSize)
 
 	if err != nil {
 		return []domain.Document{}, DocumentsMeta{}, err
@@ -66,11 +66,11 @@ func (s *DefaultService) GetUserDocuments(userId uint64, page, pageSize int) ([]
 }
 
 type DocumentShowResponse struct {
-	ID			uint64		`json:"id"`
-	Title       string		`json:"title"`
-	CreatedAt	time.Time	`json:"created_at"`
-	UpdatedAt	time.Time	`json:"updated_at"`
-	Role		string		`json:"role"`
+	ID        uint64    `json:"id"`
+	Title     string    `json:"title"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Role      string    `json:"role"`
 }
 
 func (s *DefaultService) GetDocumentByID(docID uint64, userID uint64) (*DocumentShowResponse, error) {
@@ -84,13 +84,13 @@ func (s *DefaultService) GetDocumentByID(docID uint64, userID uint64) (*Document
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &DocumentShowResponse{
-		ID:  		doc.ID,
-		Title: 		doc.Title,
-		Role: 		role,
-		CreatedAt: 	doc.CreatedAt,
-		UpdatedAt: 	doc.UpdatedAt,
+		ID:        doc.ID,
+		Title:     doc.Title,
+		Role:      role,
+		CreatedAt: doc.CreatedAt,
+		UpdatedAt: doc.UpdatedAt,
 	}, nil
 }
 
@@ -122,7 +122,7 @@ func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, id uint64, us
 }
 
 func (s *DefaultService) shouldSnapshot(docID uint64) bool {
-    const snapshotEvery = 200
+	const snapshotEvery = 200
 
 	var lastSnapshotSeq uint64
 	var currentSeq uint64
@@ -365,7 +365,7 @@ func (s *DefaultService) RemoveCollaborator(
 	targetUserID uint64,
 ) error {
 	// must be owner
-	requesterRole, err := s.repository.GetUserRole(ctx, docID, requesterID)
+	requesterRole, err := s.repository.GetUserRole(docID, requesterID)
 	if err != nil || requesterRole != "owner" {
 		return errors.ErrForbidden(nil)
 	}

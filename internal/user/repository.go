@@ -1,8 +1,11 @@
 package user
 
 import (
-	"gorm.io/gorm"
 	"collaborative-markdown-editor/internal/domain"
+	"context"
+	"strings"
+
+	"gorm.io/gorm"
 )
 
 // UserRepository defines the interface for user data access
@@ -11,6 +14,7 @@ type UserRepository interface {
 	FindByEmail(email string) (*domain.User, error)
 	FindByID(id uint64) (*domain.User, error)
 	Deactivate(id uint64) error
+	SearchUsers(ctx context.Context, query string, limit int) ([]domain.User, error) 
 }
 
 // UserRepositoryImpl implements User
@@ -54,4 +58,21 @@ func (r *UserRepositoryImpl) Deactivate(id uint64) error {
 
 	user.IsActive = false
 	return r.db.Save(user).Error
+}
+
+func (r *UserRepositoryImpl) SearchUsers(ctx context.Context, query string, limit int) ([]domain.User, error) {
+	var users []domain.User
+
+	q := "%" + strings.ToLower(query) + "%"
+
+	err := r.db.WithContext(ctx).
+		Where(
+			"LOWER(name) LIKE ? OR LOWER(email) LIKE ?",
+			q, q,
+		).
+		Order("name ASC").
+		Limit(limit).
+		Find(&users).Error
+
+	return users, err
 }
