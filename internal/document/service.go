@@ -20,6 +20,7 @@ type Service interface {
 	GetUserDocuments(userId uint64, page, pageSize int) ([]domain.Document, DocumentsMeta, error)
 	GetDocumentByID(docID uint64, userID uint64) (*DocumentShowResponse, error)
 	GetDocumentState(docID uint64) (*DocumentStateResponse, error)
+	CreateDocumentSnapshot(ctx context.Context, docID uint64, state []byte) error
 	FetchUserRole(docID, userID uint64) (string, error)
 	ListCollaborators(ctx context.Context, docID uint64, requesterID uint64) ([]DocumentCollaboratorDTO, error)
 	AddCollaborator(ctx context.Context, docID uint64, requesterID uint64, targetUserID uint64, role string) (*DocumentCollaboratorDTO, error)
@@ -130,6 +131,10 @@ func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, docID uint64,
 	return nil
 }
 
+func (s *DefaultService) CreateDocumentSnapshot(ctx context.Context, docID uint64, state []byte) error {
+	return s.repository.CreateSnapshot(ctx, docID, state)
+}
+
 func (s *DefaultService) shouldSnapshot(docID uint64) bool {
 	const snapshotEvery = 200
 
@@ -219,7 +224,7 @@ func (s *DefaultService) fetchStateFromSyncServer(ctx context.Context, docID uin
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("node returned %d", resp.StatusCode)
+		return nil, fmt.Errorf("sync server returned %d", resp.StatusCode)
 	}
 
 	var payload StateResponse

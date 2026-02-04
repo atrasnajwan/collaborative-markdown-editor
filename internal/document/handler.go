@@ -180,6 +180,33 @@ func (h *Handler) CreateUpdate(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *Handler) CreateSnapshot(c *gin.Context) {
+	docIDStr := c.Param("id")
+	docID, err := strconv.ParseUint(docIDStr, 10, 64)
+	if err != nil {
+		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		return
+	}
+
+	snapshotBinary, err := io.ReadAll(c.Request.Body)
+	if err != nil || len(snapshotBinary) == 0 {
+		errors.HandleError(c, errors.ErrInvalidInput(err))
+		return
+	}
+
+	err = h.service.CreateDocumentSnapshot(
+		c.Request.Context(),
+		docID,
+		snapshotBinary,	// raw Yjs binary
+	)
+	if err != nil {
+		errors.HandleError(c, err)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
 func (h *Handler) ListCollaborators(c *gin.Context) {
 	docID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {

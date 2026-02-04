@@ -85,6 +85,7 @@ func main() {
 	router.GET("/internal/documents/:id/permission", auth.InternalAuthMiddleware(config.AppConfig.InternalSecret), docHandler.ShowUserRole)
 	router.GET("/internal/documents/:id/last-state", auth.InternalAuthMiddleware(config.AppConfig.InternalSecret), docHandler.ShowDocumentState)
 	router.POST("/internal/documents/:id/update", auth.InternalAuthMiddleware(config.AppConfig.InternalSecret), docHandler.CreateUpdate)
+	router.POST("/internal/documents/:id/snapshot", auth.InternalAuthMiddleware(config.AppConfig.InternalSecret), docHandler.CreateSnapshot)
 
 	// Server configuration
 	serverPort := config.AppConfig.ServerPort
