@@ -26,6 +26,7 @@ type Service interface {
 	AddCollaborator(ctx context.Context, docID uint64, requesterID uint64, targetUserID uint64, role string) (*DocumentCollaboratorDTO, error)
 	ChangeCollaboratorRole(ctx context.Context, docID uint64, requesterID uint64, targetUserID uint64, newRole string) (*DocumentCollaboratorDTO, error)
 	RemoveCollaborator(ctx context.Context, docID uint64, requesterID uint64, targetUserID uint64) error
+	DeleteDocument(ctx context.Context, docID uint64, userID uint64) error
 }
 
 type UserProvider interface {
@@ -399,4 +400,19 @@ func (s *DefaultService) RemoveCollaborator(
 	}
 
 	return nil
+}
+
+func (s *DefaultService) DeleteDocument(ctx context.Context, docID uint64, userID uint64) error {
+	var collab domain.DocumentCollaborator
+	err := s.repository.GetCollaborator(docID, userID, &collab)
+
+	if err != nil {
+		return errors.ErrUnprocessableEntity(err).WithMessage("you're not the collaborator!")
+	}
+
+	if collab.Role != "owner" {
+		return errors.ErrUnprocessableEntity(err).WithMessage("only owner can delete document!")
+	}
+
+	return s.repository.DeleteDocument(ctx, docID)
 }

@@ -19,10 +19,12 @@ type DocumentRepository interface {
 	LastSnapshot(docID uint64, snapshot *domain.DocumentSnapshot) error
 	LastSnapshotSeq(docID uint64, lastSnapshotSeq *uint64) error
 	UpdatesFromSnapshot(docID uint64, snapshotSeq uint64, updates *[]domain.DocumentUpdate) error
+	GetCollaborator(docID uint64, userID uint64, collab *domain.DocumentCollaborator) error
 	ListDocumentCollaborators(ctx context.Context, docID uint64) ([]collaboratorRow, error)
 	AddCollaborator(ctx context.Context, docID uint64, userID uint64, role string) error
 	UpdateCollaboratorRole(ctx context.Context, docID uint64, userID uint64, role string) error
 	RemoveCollaborator(ctx context.Context, docID uint64, userID uint64) error
+	DeleteDocument(ctx context.Context, docID uint64) error
 }
 
 type DocumentRepositoryImpl struct {
@@ -235,6 +237,12 @@ func (r *DocumentRepositoryImpl) ListDocumentCollaborators(ctx context.Context, 
 	return rows, err
 }
 
+func (r *DocumentRepositoryImpl) GetCollaborator(docID uint64, userID uint64, collab *domain.DocumentCollaborator) error {
+	return r.db.
+		Where("document_id = ? AND user_id = ?", docID, userID).
+		First(&collab).Error
+}
+
 func (r *DocumentRepositoryImpl) AddCollaborator(ctx context.Context, docID uint64, userID uint64, role string) error {
 	collab := domain.DocumentCollaborator{
 		DocumentID: docID,
@@ -275,4 +283,12 @@ func (r *DocumentRepositoryImpl) RemoveCollaborator(ctx context.Context, docID u
 	}
 
 	return nil
+}
+
+func (r *DocumentRepositoryImpl) DeleteDocument(ctx context.Context, docID uint64) error {
+	return r.db.WithContext(ctx).
+		Where("id = ?", docID).
+		Delete(&domain.Document{}).Error
+		// automatically delete all the relationships
+		// gorm:"constraint:OnDelete:CASCADE"
 }

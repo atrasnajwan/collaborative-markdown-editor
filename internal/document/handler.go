@@ -347,3 +347,27 @@ func (h *Handler) RemoveCollaborator(c *gin.Context) {
 		"message": "collaborator removed",
 	})
 }
+
+func (h *Handler) DeleteDocument(c *gin.Context) {
+	docIDStr := c.Param("id")
+	docID, err := strconv.ParseUint(docIDStr, 10, 64)
+	if err != nil {
+		errors.HandleError(c,
+			errors.ErrInvalidInput(err).WithMessage("invalid document id"),
+		)
+		return
+	}
+
+	userID, exists := c.Get("user_id")
+	if !exists {
+		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
+		return
+	}
+
+	if err := h.service.DeleteDocument(c.Request.Context(), docID, userID.(uint64)); err != nil {
+		errors.HandleError(c, err)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
