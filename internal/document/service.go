@@ -99,14 +99,23 @@ func (s *DefaultService) FetchUserRole(docID, userID uint64) (string, error) {
 }
 
 // context to detect if connection is safe, and cancel downstream if fail
-func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error {
-	err := s.repository.CreateUpdate(id, userID, content)
+func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, docID uint64, userID uint64, content []byte) error {
+	// viewer not allowed to
+	role, err := s.FetchUserRole(docID, userID)
+	if err != nil {
+		return err
+	}
+	if role == "viewer" {
+		return errors.ErrForbidden(nil)
+	}
+
+	err = s.repository.CreateUpdate(docID, userID, content)
 	if err != nil {
 		return err
 	}
 
-	if s.shouldSnapshot(id) {
-		state, err := s.fetchStateFromSyncServer(ctx, id)
+	if s.shouldSnapshot(docID) {
+		state, err := s.fetchStateFromSyncServer(ctx, docID)
 		if err != nil {
 			return err
 		}
@@ -115,7 +124,7 @@ func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, id uint64, us
 		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
 
-		return s.repository.CreateSnapshot(ctx, id, state)
+		return s.repository.CreateSnapshot(ctx, docID, state)
 	}
 
 	return nil
