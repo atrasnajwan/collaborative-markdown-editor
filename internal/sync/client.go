@@ -2,6 +2,7 @@ package sync
 
 import (
 	"bytes"
+	"collaborative-markdown-editor/internal/config"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -12,7 +13,6 @@ import (
 )
 
 type SyncClient struct {
-	baseURL    string
 	httpClient *http.Client
 }
 
@@ -22,148 +22,92 @@ type Client interface {
 	RemoveDocument(ctx context.Context, docID uint64) error 
 }
 
-func NewSyncClient(baseURL string) *SyncClient {
+func NewSyncClient() *SyncClient {
 	return &SyncClient{
-		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
 	}
 }
 
+func (s *SyncClient) doRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+    var bodyReader io.Reader
+    if body != nil {
+        b, err := json.Marshal(body)
+        if err != nil {
+            return nil, err
+        }
+        bodyReader = bytes.NewReader(b)
+    }
+
+    url := fmt.Sprintf("%s%s", config.AppConfig.SyncServerAddress, path)
+    req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
+    if err != nil {
+        return nil, err
+    }
+
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("X-Internal-Secret", config.AppConfig.SyncServerSecret)
+
+    resp, err := s.httpClient.Do(req)
+    if err != nil {
+        return nil, err
+    }
+
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+        defer resp.Body.Close()
+        b, _ := io.ReadAll(resp.Body)
+        return nil, fmt.Errorf("sync server error: status=%d body=%s", resp.StatusCode, string(b))
+    }
+
+    return resp, nil
+}
+
 type StateResponse struct {
 	Binary string `json:"binary"`
 }
 
-// call sync server to get current doc state
+// GET /internal/documents/:id/state
 func (s *SyncClient) FetchDocumentState(ctx context.Context, docID uint64) ([]byte, error) {
-	url := fmt.Sprintf(
-		"%s/internal/documents/%d/state",
-		s.baseURL,
-		docID,
-	)
+    path := fmt.Sprintf("/internal/documents/%d/state", docID)
+    resp, err := s.doRequest(ctx, http.MethodGet, path, nil)
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf(
-			"sync server fetch state error: status=%d body=%s",
-			resp.StatusCode,
-			string(b),
-		)
-	}
-
-	var payload StateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, err
-	}
-
-	return base64.StdEncoding.DecodeString(payload.Binary)
+    var payload StateResponse
+    if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+        return nil, err
+    }
+    return base64.StdEncoding.DecodeString(payload.Binary)
 }
 
-type SyncPermissionRequest struct {
+type UpdateRequest struct {
 	UserID uint64 `json:"user_id"`
-	Role   string `json:"role"`
+	Role string `json:"role"`
 }
 
-func (s *SyncClient) UpdateUserPermission(
-	ctx context.Context,
-	docID uint64,
-	userID uint64,
-	role string,
-) error {
-
-	url := fmt.Sprintf(
-		"%s/internal/documents/%d/permission",
-		s.baseURL,
-		docID,
-	)
-
-	payload := SyncPermissionRequest{
-		UserID: userID,
-		Role:   role,
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPut,
-		url,
-		bytes.NewReader(body),
-	)
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	// req.Header.Set("X-Internal-Secret", os.Getenv("SYNC_INTERNAL_SECRET"))
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf(
-			"sync server error: status=%d body=%s",
-			resp.StatusCode,
-			string(b),
-		)
-	}
-
-	return nil
+// PUT /internal/documents/:id/permission
+func (s *SyncClient) UpdateUserPermission(ctx context.Context, docID, userID uint64, role string) error {
+    path := fmt.Sprintf("/internal/documents/%d/permission", docID)
+    payload := UpdateRequest{userID, role}
+    
+    resp, err := s.doRequest(ctx, http.MethodPut, path, payload)
+    if err != nil {
+        return err
+    }
+    resp.Body.Close()
+    return nil
 }
 
+// DELETE /internal/documents/:id
 func (s *SyncClient) RemoveDocument(ctx context.Context, docID uint64) error {
-	url := fmt.Sprintf(
-		"%s/internal/documents/%d",
-		s.baseURL,
-		docID,
-	)
-
-	req, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodDelete,
-		url,
-		nil,
-	)
-	if err != nil {
-		return err
-	}
-
-	// req.Header.Set("Content-Type", "application/json")
-	// req.Header.Set("X-Internal-Secret", os.Getenv("SYNC_INTERNAL_SECRET"))
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf(
-			"sync server delete error: status=%d body=%s",
-			resp.StatusCode,
-			string(b),
-		)
-	}
-
-	return nil
+    path := fmt.Sprintf("/internal/documents/%d", docID)
+    resp, err := s.doRequest(ctx, http.MethodDelete, path, nil)
+    if err != nil {
+        return err
+    }
+    resp.Body.Close()
+    return nil
 }

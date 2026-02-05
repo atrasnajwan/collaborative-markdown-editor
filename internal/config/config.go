@@ -29,6 +29,7 @@ type Config struct {
 
 	// Sync server config
 	SyncServerAddress string
+	SyncServerSecret string
 
 	// internal secret used for communication between server
 	InternalSecret string
@@ -73,6 +74,7 @@ func LoadConfig() {
 		DBName:            getEnv("DB_NAME", "markdown_editor"),
 		RedisAddress:      getEnv("REDIS_ADDRESS", "localhost:6379"),
 		SyncServerAddress: getEnv("SYNC_ADDRESS", "http://localhost:8787"),
+		SyncServerSecret:  getEnv("SYNC_SECRET", "collab-sync-secret"),
 		JWTSecret:         jwtSecret,
 		InternalSecret:    getEnv("INTERNAL_SECRET", "collab-internal-secret"),
 	}

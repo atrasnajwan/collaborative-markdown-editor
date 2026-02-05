@@ -43,7 +43,7 @@ func main() {
 	docRepo := document.NewRepository(db.AppDb)
 	// Initialize service
 	userService := user.NewService(userRepo)
-	syncClient := sync.NewSyncClient(config.AppConfig.SyncServerAddress)
+	syncClient := sync.NewSyncClient()
 	docService := document.NewService(docRepo, userService, syncClient)
 	// Initialize handler
 	docHandler := document.NewHandler(docService)
