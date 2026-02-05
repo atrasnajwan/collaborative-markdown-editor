@@ -77,6 +77,37 @@ func (h *Handler) ShowUserDocuments(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": docs, "meta": meta})
 }
 
+
+func (h *Handler) ShowSharedDocuments(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
+		return
+	}
+
+	// Parse query params with defaults
+	page := 1
+	pageSize := 10
+	if p := c.Query("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	if ps := c.Query("per_page"); ps != "" {
+		if v, err := strconv.Atoi(ps); err == nil && v > 0 {
+			pageSize = v
+		}
+	}
+
+	docs, meta, err := h.service.GetSharedDocuments(userID.(uint64), page, pageSize)
+	if err != nil {
+		errors.HandleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": docs, "meta": meta})
+}
+
 func (h *Handler) ShowDocument(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)

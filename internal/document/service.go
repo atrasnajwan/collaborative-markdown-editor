@@ -15,6 +15,7 @@ type Service interface {
 	CreateUserDocument(userID uint64, document *domain.Document) error
 	CreateDocumentUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error
 	GetUserDocuments(userId uint64, page, pageSize int) ([]domain.Document, DocumentsMeta, error)
+	GetSharedDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
 	GetDocumentByID(docID uint64, userID uint64) (*DocumentShowResponse, error)
 	GetDocumentState(docID uint64) (*DocumentStateResponse, error)
 	CreateDocumentSnapshot(ctx context.Context, docID uint64, state []byte) error
@@ -63,6 +64,17 @@ func (s *DefaultService) GetUserDocuments(userId uint64, page, pageSize int) ([]
 
 	return documents, meta, nil
 }
+
+func (s *DefaultService) GetSharedDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
+	documents, meta, err := s.repository.ListSharedDocuments(userId, page, pageSize)
+
+	if err != nil {
+		return []DocumentShowResponse{}, DocumentsMeta{}, err
+	}
+
+	return documents, meta, nil
+}
+
 
 type DocumentShowResponse struct {
 	ID        uint64    `json:"id"`

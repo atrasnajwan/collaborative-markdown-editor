@@ -77,6 +77,7 @@ func main() {
 	router.GET("/users", auth.AuthMiddleWare(), userHandler.SearchUsers)
 	router.POST("/documents", auth.AuthMiddleWare(), docHandler.Create)
 	router.GET("/documents", auth.AuthMiddleWare(), docHandler.ShowUserDocuments)
+	router.GET("/documents/shared", auth.AuthMiddleWare(), docHandler.ShowSharedDocuments)
 	router.GET("/documents/:id", auth.AuthMiddleWare(), docHandler.ShowDocument)
 	router.DELETE("/documents/:id", auth.AuthMiddleWare(), docHandler.DeleteDocument)
 	router.GET("/documents/:id/collaborators", auth.AuthMiddleWare(), docHandler.ListCollaborators)
