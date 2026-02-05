@@ -1,14 +1,11 @@
 package document
 
 import (
-	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
+	"collaborative-markdown-editor/internal/sync"
 	"context"
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
-	"net/http"
+	"log"
 	"time"
 
 	"gorm.io/gorm"
@@ -35,14 +32,14 @@ type UserProvider interface {
 
 type DefaultService struct {
 	repository   DocumentRepository
-	httpClient   *http.Client
+	syncClient   *sync.SyncClient
 	userProvider UserProvider
 }
 
-func NewService(repository DocumentRepository, userProvider UserProvider) Service {
+func NewService(repository DocumentRepository, userProvider UserProvider, syncClient *sync.SyncClient) Service {
 	return &DefaultService{
 		repository:   repository,
-		httpClient:   &http.Client{Timeout: 5 * time.Second},
+		syncClient:   syncClient,
 		userProvider: userProvider,
 	}
 }
@@ -117,7 +114,7 @@ func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, docID uint64,
 	}
 
 	if s.shouldSnapshot(docID) {
-		state, err := s.fetchStateFromSyncServer(ctx, docID)
+		state, err := s.syncClient.FetchDocumentState(ctx, docID)
 		if err != nil {
 			return err
 		}
@@ -203,37 +200,6 @@ func toDocumentUpdateDTOs(updates []domain.DocumentUpdate) []DocumentUpdateDTO {
 	}
 
 	return dtos
-}
-
-type StateResponse struct {
-	Binary string `json:"binary"`
-}
-
-// call sync server to get current doc state
-func (s *DefaultService) fetchStateFromSyncServer(ctx context.Context, docID uint64) ([]byte, error) {
-	url := fmt.Sprintf("%s/internal/documents/%d/state", config.AppConfig.SyncServerAddress, docID)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("sync server returned %d", resp.StatusCode)
-	}
-
-	var payload StateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, err
-	}
-
-	return base64.StdEncoding.DecodeString(payload.Binary)
 }
 
 type UserDTO struct {
@@ -363,6 +329,17 @@ func (s *DefaultService) ChangeCollaboratorRole(
 		return nil, err
 	}
 
+	// send update to sync-server
+	err = s.syncClient.UpdateUserPermission(
+		ctx,
+		docID,
+		targetUserID,
+		newRole,
+	)
+	if err != nil {
+		log.Printf("failed to notify sync server: %v", err)
+	}
+	
 	return &DocumentCollaboratorDTO{
 		User: UserDTO{
 			ID:    user.ID,
@@ -399,6 +376,17 @@ func (s *DefaultService) RemoveCollaborator(
 		return err
 	}
 
+	// send update to sync-server
+	err = s.syncClient.UpdateUserPermission(
+		ctx,
+		docID,
+		targetUserID,
+		"none",
+	)
+	if err != nil {
+		log.Printf("failed to notify sync server: %v", err)
+	}
+
 	return nil
 }
 
@@ -414,5 +402,18 @@ func (s *DefaultService) DeleteDocument(ctx context.Context, docID uint64, userI
 		return errors.ErrUnprocessableEntity(err).WithMessage("only owner can delete document!")
 	}
 
-	return s.repository.DeleteDocument(ctx, docID)
+	err = s.repository.DeleteDocument(ctx, docID)
+	if err != nil {
+		return err
+	}
+
+	// send update to sync-server
+	err = s.syncClient.RemoveDocument(
+		ctx,
+		docID,
+	)
+	if err != nil {
+		log.Printf("failed to notify sync server: %v", err)
+	}
+	return  nil
 }

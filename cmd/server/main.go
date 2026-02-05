@@ -1,10 +1,11 @@
-	package main
+package main
 
 import (
 	"collaborative-markdown-editor/auth"
 	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/db"
 	"collaborative-markdown-editor/internal/document"
+	"collaborative-markdown-editor/internal/sync"
 	"collaborative-markdown-editor/internal/user"
 	"collaborative-markdown-editor/redis"
 	"context"
@@ -16,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -42,7 +43,8 @@ func main() {
 	docRepo := document.NewRepository(db.AppDb)
 	// Initialize service
 	userService := user.NewService(userRepo)
-	docService := document.NewService(docRepo, userService)
+	syncClient := sync.NewSyncClient(config.AppConfig.SyncServerAddress)
+	docService := document.NewService(docRepo, userService, syncClient)
 	// Initialize handler
 	docHandler := document.NewHandler(docService)
 	userHandler := user.NewHandler(userService)
