@@ -11,7 +11,7 @@ import (
 type DocumentRepository interface {
 	Create(userID uint64, document *domain.Document) error
 	CreateUpdate(id uint64, userID uint64, content []byte) error
-	ListDocumentByUserID(userID uint64, page, pageSize int) ([]domain.Document, DocumentsMeta, error)
+	ListDocumentByUserID(userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
 	ListSharedDocuments(userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
 	GetUserRole(docID uint64, userID uint64) (string, error)
 	FindByID(id uint64) (*domain.Document, error)
@@ -59,25 +59,39 @@ type DocumentsMeta struct {
 	TotalPage   int   `json:"total_page"`
 }
 
-func (r *DocumentRepositoryImpl) ListDocumentByUserID(userID uint64, page, pageSize int) ([]domain.Document, DocumentsMeta, error) {
-	var documents []domain.Document
+func (r *DocumentRepositoryImpl) ListDocumentByUserID(userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
+	var docs []DocumentShowResponse
 	var totalRecords int64
 
+	data := r.db.Table("documents").
+			Select(`
+				documents.id,
+				documents.title,
+				documents.updated_at,
+				'owner' as role,
+            	users.name as owner_name,
+				documents.user_id as owner_id
+			`).
+			Joins("LEFT JOIN users ON users.id = documents.user_id").
+			Where("documents.user_id = ?", userID)
+
 	// Count total records
-	if err := r.db.Model(&domain.Document{}).Where("user_id = ?", userID).Count(&totalRecords).Error; err != nil {
-		return documents, DocumentsMeta{}, err
+	if err := data.Count(&totalRecords).Error; err != nil {
+		return docs, DocumentsMeta{}, err
 	}
 
 	offset := (page - 1) * pageSize
-	err := r.db.Where("user_id = ?", userID).
-		Offset(offset).
-		Limit(pageSize).
-		Order("updated_at desc").
-		Find(&documents).Error
+	err := data.Offset(offset).
+				Limit(pageSize).
+				Order("documents.updated_at DESC").
+				Find(&docs).Error
+	if err != nil {
+		return docs, DocumentsMeta{}, err
+	}
 
 	totalPages := int((totalRecords + int64(pageSize) - 1) / int64(pageSize))
 
-	return documents, DocumentsMeta{
+	return docs, DocumentsMeta{
 		Total:       totalRecords,
 		PerPage:     pageSize,
 		TotalPage:   totalPages,
@@ -94,12 +108,12 @@ func (r *DocumentRepositoryImpl) ListSharedDocuments(userID uint64, page, pageSi
 				documents.id,
 				documents.title,
 				document_collaborators.role,
-				documents.updated_at
+				documents.updated_at,
+				users.name as owner_name,
+				documents.user_id as owner_id
 			`).
-			Joins(`
-				JOIN document_collaborators
-				  ON document_collaborators.document_id = documents.id
-			`).
+			Joins(`JOIN document_collaborators ON document_collaborators.document_id = documents.id`).
+			Joins("JOIN users ON users.id = documents.user_id").
 			Where("document_collaborators.user_id = ?", userID).
 			Where("documents.user_id != ?", userID) // except own document
 

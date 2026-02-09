@@ -14,7 +14,7 @@ import (
 type Service interface {
 	CreateUserDocument(userID uint64, document *domain.Document) error
 	CreateDocumentUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error
-	GetUserDocuments(userId uint64, page, pageSize int) ([]domain.Document, DocumentsMeta, error)
+	GetUserDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
 	GetSharedDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
 	GetDocumentByID(docID uint64, userID uint64) (*DocumentShowResponse, error)
 	GetDocumentState(docID uint64) (*DocumentStateResponse, error)
@@ -55,11 +55,11 @@ type DocumentsData struct {
 	Meta      DocumentsMeta `json:"total_page"`
 }
 
-func (s *DefaultService) GetUserDocuments(userId uint64, page, pageSize int) ([]domain.Document, DocumentsMeta, error) {
+func (s *DefaultService) GetUserDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
 	documents, meta, err := s.repository.ListDocumentByUserID(userId, page, pageSize)
 
 	if err != nil {
-		return []domain.Document{}, DocumentsMeta{}, err
+		return []DocumentShowResponse{}, DocumentsMeta{}, err
 	}
 
 	return documents, meta, nil
@@ -82,6 +82,8 @@ type DocumentShowResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Role      string    `json:"role"`
+	OwnerName string	`json:"owner_name"`
+	OwnerId   uint64	`json:"owner_id"`
 }
 
 func (s *DefaultService) GetDocumentByID(docID uint64, userID uint64) (*DocumentShowResponse, error) {
