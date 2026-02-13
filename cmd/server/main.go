@@ -7,7 +7,6 @@ import (
 	"collaborative-markdown-editor/internal/document"
 	"collaborative-markdown-editor/internal/sync"
 	"collaborative-markdown-editor/internal/user"
-	"collaborative-markdown-editor/redis"
 	"context"
 	"fmt"
 	"log"
@@ -35,9 +34,6 @@ func main() {
 	// Seed database with initial data (for development)
 	db.SeedData()
 
-	// Initialize Redis
-	redis.InitRedis()
-
 	// Initialize repository
 	userRepo := user.NewRepository(db.AppDb)
 	docRepo := document.NewRepository(db.AppDb)
@@ -48,16 +44,18 @@ func main() {
 	// Initialize handler
 	docHandler := document.NewHandler(docService)
 	userHandler := user.NewHandler(userService)
-
+	// Initialize middleware
+	middleware := &auth.Middleware{UserService: userService, InternalSecret: config.AppConfig.InternalSecret}
+	
 	// Initialize Gin router
 	router := gin.Default()
-
+	
 	// cors setting
 	corsConfig := cors.Config{
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: false,
+		AllowCredentials: true,
 	}
 
 	if config.AppConfig.Environment == "development" {
@@ -65,31 +63,37 @@ func main() {
 		corsConfig.AllowAllOrigins = true
 	} else {
 		// Restrict origins in production
-		corsConfig.AllowOrigins = []string{"https://production-frontend.com"}
+		corsConfig.AllowOrigins = []string{config.AppConfig.FrontendAddress}
 	}
 	router.Use(cors.New(corsConfig))
 
 	// User routes
 	router.POST("/register", userHandler.Register)
 	router.POST("/login", userHandler.Login)
-	router.DELETE("/logout", auth.AuthMiddleWare(), userHandler.Logout)
-	router.GET("/profile", auth.AuthMiddleWare(), userHandler.GetProfile)
-	router.GET("/users", auth.AuthMiddleWare(), userHandler.SearchUsers)
-	router.POST("/documents", auth.AuthMiddleWare(), docHandler.Create)
-	router.GET("/documents", auth.AuthMiddleWare(), docHandler.ShowUserDocuments)
-	router.GET("/documents/shared", auth.AuthMiddleWare(), docHandler.ShowSharedDocuments)
-	router.GET("/documents/:id", auth.AuthMiddleWare(), docHandler.ShowDocument)
-	router.DELETE("/documents/:id", auth.AuthMiddleWare(), docHandler.DeleteDocument)
-	router.GET("/documents/:id/collaborators", auth.AuthMiddleWare(), docHandler.ListCollaborators)
-	router.POST("/documents/:id/collaborators", auth.AuthMiddleWare(), docHandler.AddCollaborator)
-	router.PUT("/documents/:id/collaborators", auth.AuthMiddleWare(), docHandler.ChangeCollaboratorRole)
-	router.DELETE("/documents/:id/collaborators/:userId", auth.AuthMiddleWare(), docHandler.RemoveCollaborator)
+	router.POST("/refresh", userHandler.RefreshToken)
+
+	authGroup := router.Group("/")
+	authGroup.Use(middleware.AuthMiddleWare())
+	authGroup.DELETE("/logout", userHandler.Logout)
+	authGroup.GET("/profile", userHandler.GetProfile)
+	authGroup.GET("/users", userHandler.SearchUsers)
+	authGroup.POST("/documents", docHandler.Create)
+	authGroup.GET("/documents", docHandler.ShowUserDocuments)
+	authGroup.GET("/documents/shared", docHandler.ShowSharedDocuments)
+	authGroup.GET("/documents/:id", docHandler.ShowDocument)
+	authGroup.DELETE("/documents/:id", docHandler.DeleteDocument)
+	authGroup.GET("/documents/:id/collaborators", docHandler.ListCollaborators)
+	authGroup.POST("/documents/:id/collaborators", docHandler.AddCollaborator)
+	authGroup.PUT("/documents/:id/collaborators", docHandler.ChangeCollaboratorRole)
+	authGroup.DELETE("/documents/:id/collaborators/:userId", docHandler.RemoveCollaborator)
 
 	// internal use routes
-	router.GET("/internal/documents/:id/permission", auth.InternalAuthMiddleware(config.AppConfig.InternalSecret), docHandler.ShowUserRole)
-	router.GET("/internal/documents/:id/last-state", auth.InternalAuthMiddleware(config.AppConfig.InternalSecret), docHandler.ShowDocumentState)
-	router.POST("/internal/documents/:id/update", auth.InternalAuthMiddleware(config.AppConfig.InternalSecret), docHandler.CreateUpdate)
-	router.POST("/internal/documents/:id/snapshot", auth.InternalAuthMiddleware(config.AppConfig.InternalSecret), docHandler.CreateSnapshot)
+	authInternalGroup := router.Group("/internal")
+	authInternalGroup.Use(middleware.InternalAuthMiddleware())
+	authInternalGroup.GET("/documents/:id/permission", docHandler.ShowUserRole)
+	authInternalGroup.GET("/documents/:id/last-state", docHandler.ShowDocumentState)
+	authInternalGroup.POST("/documents/:id/update", docHandler.CreateUpdate)
+	authInternalGroup.POST("/documents/:id/snapshot", docHandler.CreateSnapshot)
 
 	// Server configuration
 	serverPort := config.AppConfig.ServerPort

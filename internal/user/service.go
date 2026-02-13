@@ -16,6 +16,7 @@ type Service interface {
 	Login(email, password string) (*domain.User, error)
 	GetUserByID(id uint64) (*domain.User, error)
 	DeactivateUser(id uint64) error
+	IncreaseTokenVersion(id uint64) error
 	SearchUsers(ctx context.Context, query string) ([]domain.SafeUser, error)
 }
 
@@ -77,6 +78,10 @@ func (s *DefaultService) Login(email, password string) (*domain.User, error) {
 // GetUserByID gets a user by ID
 func (s *DefaultService) GetUserByID(id uint64) (*domain.User, error) {
 	return s.repository.FindByID(id)
+}
+
+func (s *DefaultService) IncreaseTokenVersion(id uint64) error {
+	return s.repository.UpdateTokenVersion(id)
 }
 
 // DeactivateUser deactivates a user

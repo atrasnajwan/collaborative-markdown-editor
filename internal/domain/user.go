@@ -14,6 +14,7 @@ type User struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	IsActive     bool `gorm:"default:true"`
+	TokenVersion int64
 	Documents    []Document
 }
 

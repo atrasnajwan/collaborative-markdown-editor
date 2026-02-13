@@ -2,11 +2,11 @@ package user
 
 import (
 	"collaborative-markdown-editor/auth"
+	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
-	"collaborative-markdown-editor/redis"
+	"log"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -71,29 +71,88 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	// Generate JWT token
-	token, err := auth.GenerateJWT(user.ID)
+	accessToken, err := auth.GenerateAccessToken(user.ID, user.TokenVersion)
+	if err != nil {
+		errors.HandleError(c, errors.ErrInternalServer(err))
+		return
+	}
+	refreshToken, err := auth.GenerateRefreshToken(user.ID, user.TokenVersion)
 	if err != nil {
 		errors.HandleError(c, errors.ErrInternalServer(err))
 		return
 	}
 
-	// Store in Redis with expiration
-	redis.RedisClient.Set(redis.Ctx, token, user.ID, time.Hour*24*3)
+	// Set refresh token as HttpOnly cookie
+	c.SetCookie(
+		"refresh_token",
+		refreshToken,
+		7*24*3600,
+		"/",
+		"",
+		config.AppConfig.Environment == "production",  // Secure
+		true,  // HttpOnly
+	)
 
 	c.JSON(http.StatusOK, gin.H{
-		"token": token,
-		"user":  user.ToSafeUser(),
+		"access_token":	accessToken,
+		"user": 		user.ToSafeUser(),
 	})
 }
 
-// Logout handles user logout
-func (h *Handler) Logout(c *gin.Context) {
-	jwtToken, exists := c.Get("jwt_token")
-	if exists {
-		redis.RedisClient.Del(redis.Ctx, jwtToken.(string))
+func (h *Handler) RefreshToken(c *gin.Context) {
+	refreshToken, err := c.Cookie("refresh_token")
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
 	}
 
+	token, err := auth.VerifyJWT(refreshToken)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	userID, tokenVersion, err := auth.GetDataFromToken(token) 
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	user, err := h.service.GetUserByID(userID)
+	if err != nil {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	// Check token version
+	if user.TokenVersion != tokenVersion {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+
+	// Issue new access token
+	newAccessToken, err := auth.GenerateAccessToken(user.ID, user.TokenVersion)
+	if user.TokenVersion != tokenVersion {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"access_token": newAccessToken,
+	})
+}
+
+
+// Logout handles user logout
+func (h *Handler) Logout(c *gin.Context) {
+	userID := c.GetUint("user_id")
+
+	err := h.service.IncreaseTokenVersion(uint64(userID))
+	if err != nil {
+		log.Printf("%v\n", err.Error())
+	}
+	// Clear refresh cookie
+	c.SetCookie("refresh_token", "", -1, "/", "", true, true)
 	c.Status(http.StatusNoContent)
 }
 

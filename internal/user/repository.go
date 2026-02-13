@@ -14,6 +14,7 @@ type UserRepository interface {
 	FindByEmail(email string) (*domain.User, error)
 	FindByID(id uint64) (*domain.User, error)
 	Deactivate(id uint64) error
+	UpdateTokenVersion(id uint64) error 
 	SearchUsers(ctx context.Context, query string, limit int) ([]domain.User, error) 
 }
 
@@ -58,6 +59,12 @@ func (r *UserRepositoryImpl) Deactivate(id uint64) error {
 
 	user.IsActive = false
 	return r.db.Save(user).Error
+}
+
+func (r *UserRepositoryImpl) UpdateTokenVersion(id uint64) error {
+	return r.db.Model(&domain.User{}).
+		Where("id = ?", id).
+		Update("token_version", gorm.Expr("token_version + 1")).Error
 }
 
 func (r *UserRepositoryImpl) SearchUsers(ctx context.Context, query string, limit int) ([]domain.User, error) {

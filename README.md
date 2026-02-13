@@ -54,8 +54,6 @@ A real-time collaborative markdown editor backend built with Go, featuring docum
 │       ├── handler_test.go
 │       ├── repository.go
 │       └── service.go
-├── redis/                  # Redis configuration
-│   └── redis.go
 ├── go.mod
 └── README.md
 ```

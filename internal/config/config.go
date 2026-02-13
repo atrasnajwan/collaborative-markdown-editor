@@ -33,6 +33,8 @@ type Config struct {
 
 	// internal secret used for communication between server
 	InternalSecret string
+
+	FrontendAddress string
 }
 
 // Global application configuration
@@ -65,18 +67,19 @@ func LoadConfig() {
 	}
 
 	AppConfig = Config{
-		ServerPort:        getEnv("PORT", "8080"),
-		Environment:       getEnv("ENV", "development"),
-		DBHost:            getEnv("DB_HOST", "localhost"),
-		DBPort:            getEnv("DB_PORT", "5432"),
-		DBUser:            getEnv("DB_USER", "postgres"),
-		DBPassword:        getEnv("DB_PASSWORD", "postgres"),
-		DBName:            getEnv("DB_NAME", "markdown_editor"),
-		RedisAddress:      getEnv("REDIS_ADDRESS", "localhost:6379"),
-		SyncServerAddress: getEnv("SYNC_ADDRESS", "http://localhost:8787"),
-		SyncServerSecret:  getEnv("SYNC_SECRET", "collab-sync-secret"),
-		JWTSecret:         jwtSecret,
-		InternalSecret:    getEnv("INTERNAL_SECRET", "collab-internal-secret"),
+		ServerPort:        	getEnv("PORT", "8080"),
+		Environment:       	getEnv("ENV", "development"),
+		DBHost:            	getEnv("DB_HOST", "localhost"),
+		DBPort:            	getEnv("DB_PORT", "5432"),
+		DBUser:            	getEnv("DB_USER", "postgres"),
+		DBPassword:        	getEnv("DB_PASSWORD", "postgres"),
+		DBName:            	getEnv("DB_NAME", "markdown_editor"),
+		RedisAddress:      	getEnv("REDIS_ADDRESS", "localhost:6379"),
+		SyncServerAddress: 	getEnv("SYNC_ADDRESS", "http://localhost:8787"),
+		SyncServerSecret:  	getEnv("SYNC_SECRET", "collab-sync-secret"),
+		JWTSecret:         	jwtSecret,
+		InternalSecret:    	getEnv("INTERNAL_SECRET", "collab-internal-secret"),
+		FrontendAddress:   	getEnv("FRONTEND_ADDRESS", "https://production-frontend.com"),
 	}
 }
 

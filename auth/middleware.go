@@ -1,7 +1,7 @@
 package auth
 
 import (
-	"collaborative-markdown-editor/redis"
+	"collaborative-markdown-editor/internal/domain"
 	"log"
 	"net/http"
 	"strings"
@@ -9,7 +9,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func AuthMiddleWare() gin.HandlerFunc {
+type UserProvider interface {
+	GetUserByID(id uint64) (*domain.User, error)
+}
+
+type Middleware struct {
+	UserService UserProvider
+	InternalSecret string
+}
+
+func (m *Middleware) AuthMiddleWare() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		authHeader := ctx.GetHeader("Authorization")
 		var token string
@@ -31,20 +40,24 @@ func AuthMiddleWare() gin.HandlerFunc {
 			return
 		}
 		
-		userID, err := GetUserIDFromToken(parsedToken)
+		userID, tokenVersion, err := GetDataFromToken(parsedToken)
 		if err != nil {
-			log.Println(err)
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
 		}
 
-		// check on redis
-		exists, err := redis.RedisClient.Exists(redis.Ctx, token).Result()
-		if err != nil || exists == 0 {
-			log.Println(err)
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Token expired or not found"})
+		user, err := m.UserService.GetUserByID(userID)
+		if err != nil {
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
 		}
+
+		// Check token version
+		if user.TokenVersion != tokenVersion {
+			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization failed!"})
+			return
+		}
+
 		userName := ctx.Query("userName")
 		ctx.Set("user_name", userName)
 		ctx.Set("user_id", userID)
@@ -53,14 +66,14 @@ func AuthMiddleWare() gin.HandlerFunc {
 	}
 }
 
-func InternalAuthMiddleware(secret string) gin.HandlerFunc {
+func (m *Middleware) InternalAuthMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		token := strings.TrimPrefix(
 			ctx.GetHeader("Authorization"),
 			"Bearer ",
 		)
 
-		if token != secret {
+		if token != m.InternalSecret {
 			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized internal call!"})
 			return
 		}
