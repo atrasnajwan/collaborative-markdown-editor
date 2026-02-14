@@ -10,14 +10,14 @@ A real-time collaborative markdown editor backend built with Go, featuring docum
 - **Role-based Access Control**: Owner, editor, and viewer roles for document collaborators
 - **User Search**: Search for users to add as collaborators
 - **Document Sync**: Integration with external sync server for real-time updates
-- **Redis Caching**: Session management and token storage
+- **Redis Caching**: Optional cache/connection helper (see [redis/redis.go](redis/redis.go))
 
 ## Tech Stack
 
 - **Language**: Go 1.24.2
 - **Framework**: Gin (HTTP web framework)
 - **Database**: PostgreSQL with GORM ORM
-- **Cache**: Redis
+- **Cache**: Redis (optional)
 - **Authentication**: JWT (JSON Web Tokens)
 - **Testing**: testify/mock, testify/assert
 
