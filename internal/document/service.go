@@ -50,11 +50,6 @@ func (s *DefaultService) CreateUserDocument(userId uint64, document *domain.Docu
 	return s.repository.Create(userId, document)
 }
 
-type DocumentsData struct {
-	Documents []domain.Document
-	Meta      DocumentsMeta `json:"total_page"`
-}
-
 func (s *DefaultService) GetUserDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
 	documents, meta, err := s.repository.ListDocumentByUserID(userId, page, pageSize)
 

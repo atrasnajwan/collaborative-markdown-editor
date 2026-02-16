@@ -50,7 +50,7 @@ func (h *Handler) Register(c *gin.Context) {
 	}
 
 	if err := h.service.Register(user); err != nil {
-		errors.HandleError(c, err)
+		errors.HandleError(c, errors.ErrUnprocessableEntity(err))
 		return
 	}
 
@@ -67,7 +67,7 @@ func (h *Handler) Login(c *gin.Context) {
 
 	user, err := h.service.Login(form.Email, form.Password)
 	if err != nil {
-		errors.HandleError(c, err)
+		errors.HandleError(c, errors.ErrUnprocessableEntity(err))
 		return
 	}
 
@@ -102,38 +102,38 @@ func (h *Handler) Login(c *gin.Context) {
 func (h *Handler) RefreshToken(c *gin.Context) {
 	refreshToken, err := c.Cookie("refresh_token")
 	if err != nil {
-		c.Status(http.StatusUnauthorized)
+		errors.HandleError(c, errors.ErrUnauthorized(err))
 		return
 	}
 
 	token, err := auth.VerifyJWT(refreshToken)
 	if err != nil {
-		c.Status(http.StatusUnauthorized)
+		errors.HandleError(c, errors.ErrUnauthorized(err).WithMessage("Invalid token or expired!"))
 		return
 	}
 
 	userID, tokenVersion, err := auth.GetDataFromToken(token) 
 	if err != nil {
-		c.Status(http.StatusUnauthorized)
+		errors.HandleError(c, errors.ErrUnauthorized(err).WithMessage("Invalid token"))
 		return
 	}
 
 	user, err := h.service.GetUserByID(userID)
 	if err != nil {
-		c.Status(http.StatusUnauthorized)
+		errors.HandleError(c, errors.ErrUnauthorized(err).WithMessage("User not found"))
 		return
 	}
 
 	// Check token version
 	if user.TokenVersion != tokenVersion {
-		c.Status(http.StatusUnauthorized)
+		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("Invalid token!"))
 		return
 	}
 
 	// Issue new access token
 	newAccessToken, err := auth.GenerateAccessToken(user.ID, user.TokenVersion)
-	if user.TokenVersion != tokenVersion {
-		c.Status(http.StatusInternalServerError)
+	if err != nil {
+		errors.HandleError(c, err)
 		return
 	}
 
