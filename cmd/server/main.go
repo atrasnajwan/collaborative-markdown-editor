@@ -48,7 +48,13 @@ func main() {
 	middleware := &auth.Middleware{UserService: userService, InternalSecret: config.AppConfig.InternalSecret}
 	
 	// Initialize Gin router
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.Recovery()) // can recover from panics
+
+	// logger will skips health checks
+	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipPaths: []string{"/healthz", "/readyz"},
+	}))
 	
 	// cors setting
 	corsConfig := cors.Config{
@@ -66,6 +72,19 @@ func main() {
 		corsConfig.AllowOrigins = []string{config.AppConfig.FrontendAddress}
 	}
 	router.Use(cors.New(corsConfig))
+
+    // System Routes
+	system := router.Group("/")
+	system.GET("/healthz", func(c *gin.Context) {
+		c.Status(http.StatusOK) 
+	})
+	system.GET("/readyz", func(c *gin.Context) {
+		if sqlDB, err := db.AppDb.DB(); err != nil || sqlDB.Ping() != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "unready"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ready"})
+	})
 
 	// User routes
 	router.POST("/register", userHandler.Register)
