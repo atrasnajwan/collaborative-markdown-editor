@@ -13,7 +13,7 @@ func GenerateAccessToken(userID uint64, tokenVersion int64) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": 			userID,
 		"token_version": 	tokenVersion,
-		"exp":     			time.Now().Add(time.Minute * 1).Unix(), // expires in 30 minutes
+		"exp":     			time.Now().Add(time.Minute * 30).Unix(), // expires in 30 minutes
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

@@ -14,6 +14,7 @@ import (
 
 type Service interface {
 	CreateUserDocument(userID uint64, document *domain.Document) error
+	RenameDocument(ctx context.Context, docID uint64, userID uint64, title string) (*domain.Document, error)
 	CreateDocumentUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error
 	GetUserDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
 	GetSharedDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
@@ -49,6 +50,22 @@ func NewService(repository DocumentRepository, userProvider UserProvider, syncCl
 func (s *DefaultService) CreateUserDocument(userId uint64, document *domain.Document) error {
 	// Create document for user
 	return s.repository.Create(userId, document)
+}
+
+func (s *DefaultService) RenameDocument(ctx context.Context, docID uint64, userID uint64, title string) (*domain.Document, error) {
+    if title == "" {
+        return nil, errors.BadRequest("Title cannot be empty", nil)
+    }
+
+    doc, err := s.repository.UpdateTitle(ctx, docID, userID, title)
+    if err != nil {
+        if defError.Is(err, gorm.ErrRecordNotFound) {
+            return nil, errors.NotFound("Document not found", err)
+        }
+        return nil, err
+    }
+
+    return doc, nil
 }
 
 func (s *DefaultService) GetUserDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {

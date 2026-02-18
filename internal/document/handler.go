@@ -18,12 +18,12 @@ func NewHandler(service Service) *Handler {
 	return &Handler{service: service}
 }
 
-type CreateRequest struct {
-	Title   string `json:"Title" binding:"required"`
+type CreateOrRenameRequest struct {
+	Title   string `json:"title" binding:"required,min=1,max=255"`
 }
 
 func (h *Handler) Create(c *gin.Context) {
-	var form CreateRequest
+	var form CreateOrRenameRequest
 	if err := c.ShouldBindJSON(&form); err != nil {
 		c.Error(errors.NewValidationError(err))
 		return
@@ -41,6 +41,31 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, doc)
+}
+
+func (h *Handler) Rename(c *gin.Context) {
+    docIDStr := c.Param("id")
+    docID, err := strconv.ParseUint(docIDStr, 10, 64)
+    if err != nil {
+        c.Error(err)
+        return
+    }
+
+    userID, _ := c.Get("user_id")
+
+    var input CreateOrRenameRequest
+    if err := c.ShouldBindJSON(&input); err != nil {
+        c.Error(errors.NewValidationError(err))
+        return
+    }
+
+   	doc, err := h.service.RenameDocument(c.Request.Context(), docID, userID.(uint64), input.Title)
+    if err != nil {
+        c.Error(err)
+        return
+    }
+
+    c.JSON(200, doc)
 }
 
 func (h *Handler) ShowUserDocuments(c *gin.Context) {

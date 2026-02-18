@@ -98,6 +98,7 @@ func main() {
 	authGroup.GET("/profile", userHandler.GetProfile)
 	authGroup.GET("/users", userHandler.SearchUsers)
 	authGroup.POST("/documents", docHandler.Create)
+	authGroup.PATCH("/documents/:id/rename", docHandler.Rename)
 	authGroup.GET("/documents", docHandler.ShowUserDocuments)
 	authGroup.GET("/documents/shared", docHandler.ShowSharedDocuments)
 	authGroup.GET("/documents/:id", docHandler.ShowDocument)

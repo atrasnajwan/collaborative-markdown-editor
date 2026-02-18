@@ -6,10 +6,12 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type DocumentRepository interface {
 	Create(userID uint64, document *domain.Document) error
+	UpdateTitle(ctx context.Context, docID uint64, userID uint64, newTitle string) (*domain.Document, error)
 	CreateUpdate(id uint64, userID uint64, content []byte) error
 	ListDocumentByUserID(userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
 	ListSharedDocuments(userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
@@ -50,6 +52,25 @@ func (r *DocumentRepositoryImpl) Create(userID uint64, document *domain.Document
 		},
 	}
 	return r.db.Create(document).Error
+}
+
+func (r *DocumentRepositoryImpl) UpdateTitle(ctx context.Context, docID uint64, userID uint64, newTitle string) (*domain.Document, error) {
+    var doc domain.Document
+
+    result := r.db.WithContext(ctx).
+        Model(&doc).
+        Clauses(clause.Returning{}). // tells Postgres to return the updated row
+        Where("id = ? AND user_id = ?", docID, userID).
+        Update("title", newTitle)
+
+    if result.Error != nil {
+        return nil, result.Error
+    }
+    if result.RowsAffected == 0 {
+        return nil, gorm.ErrRecordNotFound
+    }
+	
+    return &doc, nil
 }
 
 type DocumentsMeta struct {
