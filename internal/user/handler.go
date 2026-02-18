@@ -57,6 +57,52 @@ func (h *Handler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"user": user.ToSafeUser()})
 }
 
+type UpdateProfileRequest struct {
+    Name     *string `json:"name" binding:"omitempty,min=2"`
+    Email    *string `json:"email" binding:"omitempty,email"`
+}
+
+func (h *Handler) UpdateProfile(c *gin.Context) {
+    userID := c.GetUint("user_id")
+
+    var req UpdateProfileRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.Error(errors.NewValidationError(err))
+        return
+    }
+
+    user, err := h.service.UpdateUser(c.Request.Context(), uint64(userID), req)
+    if err != nil {
+        c.Error(err)
+        return
+    }
+
+    c.JSON(http.StatusOK, user)
+}
+
+type ChangePasswordRequest struct {
+    CurrentPassword string `json:"current_password" binding:"required"`
+    NewPassword     string `json:"new_password" binding:"required,min=8"`
+}
+
+func (h *Handler) ChangePassword(c *gin.Context) {
+    userID := c.GetUint("user_id")
+
+    var req ChangePasswordRequest
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.Error(errors.NewValidationError(err))
+        return
+    }
+
+    err := h.service.ChangePassword(c.Request.Context(), uint64(userID), req)
+    if err != nil {
+        c.Error(err)
+        return
+    }
+
+    c.Status(http.StatusNoContent)
+}
+
 // Login handles user login
 func (h *Handler) Login(c *gin.Context) {
 	var form FormLogin

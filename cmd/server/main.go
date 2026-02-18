@@ -96,6 +96,8 @@ func main() {
 	authGroup.Use(authMiddleware.AuthMiddleWare())
 	authGroup.DELETE("/logout", userHandler.Logout)
 	authGroup.GET("/profile", userHandler.GetProfile)
+	authGroup.PATCH("/profile", userHandler.UpdateProfile)
+	authGroup.PATCH("/change-password", userHandler.ChangePassword)
 	authGroup.GET("/users", userHandler.SearchUsers)
 	authGroup.POST("/documents", docHandler.Create)
 	authGroup.PATCH("/documents/:id/rename", docHandler.Rename)

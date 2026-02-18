@@ -6,11 +6,13 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // UserRepository defines the interface for user data access
 type UserRepository interface {
 	Create(user *domain.User) error
+	UpdateFields(ctx context.Context, userID uint64, updates map[string]interface{}) (*domain.User, error)
 	FindByEmail(email string) (*domain.User, error)
 	FindByID(id uint64) (*domain.User, error)
 	Deactivate(id uint64) error
@@ -31,6 +33,25 @@ func NewRepository(db *gorm.DB) UserRepository {
 // Create creates a new user
 func (r *UserRepositoryImpl) Create(user *domain.User) error {
 	return r.db.Create(user).Error
+}
+
+func (r *UserRepositoryImpl) UpdateFields(ctx context.Context, userID uint64, updates map[string]interface{}) (*domain.User, error) {
+    var user domain.User
+    
+	result := r.db.WithContext(ctx).
+        Model(&user).
+        Clauses(clause.Returning{}). // tells Postgres to return the updated row
+        Where("id = ?", userID).
+        Updates(updates)
+
+    if result.Error != nil {
+        return nil, result.Error
+    }
+    if result.RowsAffected == 0 {
+        return nil, gorm.ErrRecordNotFound
+    }
+
+    return &user, nil
 }
 
 // FindByEmail finds a user by email
