@@ -2,74 +2,60 @@ package errors
 
 import (
 	"errors"
-	"log"
+	"fmt"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 )
 
-// AppError represents an application error
-type AppError struct {
-	Code    int    // HTTP status code
-	Message string // Error message
-	Err     error  // Original error
+// APIError is the standard production error wrapper
+type APIError struct {
+	Status  int               `json:"-"`       // Internal HTTP status
+	Message string            `json:"message"` // User-friendly message
+	Details map[string]string `json:"errors,omitempty"` // For 422 field errors
+	Internal error            `json:"-"`       // For logging only, never expose to client
 }
 
-// Error returns the error message
-func (e *AppError) Error() string {
-	if e.Err != nil {
-		return e.Message + ": " + e.Err.Error()
+func (e *APIError) Error() string {
+	if e.Internal != nil {
+		return fmt.Sprintf("%s: %v", e.Message, e.Internal)
 	}
 	return e.Message
 }
 
-// Unwrap returns the original error
-func (e *AppError) Unwrap() error {
-	return e.Err
-}
-
-// WithMessage returns a copy of the AppError with a custom message
-func (e *AppError) WithMessage(msg string) *AppError {
-    return &AppError{
-        Code:    e.Code,
-        Message: msg,
-        Err:     e.Err,
-    }
-}
-
-// NewAppError creates a new application error
-func NewAppError(code int, message string, err error) *AppError {
-	return &AppError{
-		Code:    code,
-		Message: message,
-		Err:     err,
+// Helper Constructors
+func New(status int, message string, internal error) *APIError {
+	return &APIError{
+		Status:   status,
+		Message:  message,
+		Internal: internal,
 	}
 }
 
-// Common error types
-var (
-	ErrInvalidInput      = func(err error) *AppError { return NewAppError(http.StatusBadRequest, "Invalid input", err) }
-	ErrUnauthorized      = func(err error) *AppError { return NewAppError(http.StatusUnauthorized, "Unauthorized", err) }
-	ErrForbidden      	 = func(err error) *AppError { return NewAppError(http.StatusForbidden, "You're not allowed to do this!", err) }
-	ErrNotFound          = func(err error) *AppError { return NewAppError(http.StatusNotFound, "Resource not found", err) }
-	ErrInternalServer    = func(err error) *AppError { return NewAppError(http.StatusInternalServerError, "Internal server error", err) }
-	ErrUnprocessableEntity = func(err error) *AppError { return NewAppError(http.StatusUnprocessableEntity, "Unprocessable entity", err) }
-	ErrAlreadyExists 	= func(err error) *AppError { return NewAppError(http.StatusConflict, "Conflict data", err) }
-)
-
-// HandleError handles an error and responds with the appropriate status code and message
-func HandleError(c *gin.Context, err error) {
-	var appErr *AppError
-	log.Printf("%v\n", err.Error())
-	if errors.As(err, &appErr) {
-		c.JSON(appErr.Code, gin.H{"error": appErr.Message })
-		return
-	}
+// NewValidationError converts go-playground errors to a map
+func NewValidationError(err error) *APIError {
+	details := make(map[string]string)
 	
-	// Default to internal server error
-	c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+	var ve validator.ValidationErrors
+	if errors.As(err, &ve) {
+		for _, f := range ve {
+			details[f.Field()] = fmt.Sprintf("Field validation for '%s' failed on the '%s' tag", f.Field(), f.Tag())
+		}
+	}
+
+	return &APIError{
+		Status:  http.StatusUnprocessableEntity,
+		Message: "Validation failed",
+		Details: details,
+		Internal: err,
+	}
 }
 
-func Is(err error, target error) bool {
-	return errors.Is(err, target)
-}
+// Common error helpers
+func BadRequest(msg string, err error) *APIError { return New(http.StatusBadRequest, msg, err) }
+func Unauthorized(msg string, err error) *APIError { return New(http.StatusUnauthorized, msg, err) }
+func Forbidden(msg string, err error) *APIError { return New(http.StatusForbidden, msg, err) }
+func NotFound(msg string, err error) *APIError { return New(http.StatusNotFound, msg, err) }
+func UnprocessableEntity(msg string, err error) *APIError { return New(http.StatusUnprocessableEntity, msg, err) }
+func Conflict(msg string, err error) *APIError { return New(http.StatusConflict, msg, err) }
+func Internal(err error) *APIError { return New(http.StatusInternalServerError, "An unexpected error occurred", err) }

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"collaborative-markdown-editor/auth"
 	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/db"
 	"collaborative-markdown-editor/internal/document"
+	"collaborative-markdown-editor/internal/middleware"
 	"collaborative-markdown-editor/internal/sync"
 	"collaborative-markdown-editor/internal/user"
 	"context"
@@ -45,10 +45,11 @@ func main() {
 	docHandler := document.NewHandler(docService)
 	userHandler := user.NewHandler(userService)
 	// Initialize middleware
-	middleware := &auth.Middleware{UserService: userService, InternalSecret: config.AppConfig.InternalSecret}
+	authMiddleware := &middleware.Auth{UserService: userService, InternalSecret: config.AppConfig.InternalSecret}
 	
 	// Initialize Gin router
 	router := gin.New()
+	router.Use(middleware.ErrorHandler())
 	router.Use(gin.Recovery()) // can recover from panics
 
 	// logger will skips health checks
@@ -92,7 +93,7 @@ func main() {
 	router.POST("/refresh", userHandler.RefreshToken)
 
 	authGroup := router.Group("/")
-	authGroup.Use(middleware.AuthMiddleWare())
+	authGroup.Use(authMiddleware.AuthMiddleWare())
 	authGroup.DELETE("/logout", userHandler.Logout)
 	authGroup.GET("/profile", userHandler.GetProfile)
 	authGroup.GET("/users", userHandler.SearchUsers)
@@ -108,7 +109,7 @@ func main() {
 
 	// internal use routes
 	authInternalGroup := router.Group("/internal")
-	authInternalGroup.Use(middleware.InternalAuthMiddleware())
+	authInternalGroup.Use(authMiddleware.InternalAuthMiddleware())
 	authInternalGroup.GET("/documents/:id/permission", docHandler.ShowUserRole)
 	authInternalGroup.GET("/documents/:id/last-state", docHandler.ShowDocumentState)
 	authInternalGroup.POST("/documents/:id/update", docHandler.CreateUpdate)

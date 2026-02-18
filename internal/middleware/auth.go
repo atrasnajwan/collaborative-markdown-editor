@@ -1,9 +1,9 @@
-package auth
+package middleware
 
 import (
+	"collaborative-markdown-editor/internal/auth"
 	"collaborative-markdown-editor/internal/domain"
-	"log"
-	"net/http"
+	"collaborative-markdown-editor/internal/errors"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -13,12 +13,12 @@ type UserProvider interface {
 	GetUserByID(id uint64) (*domain.User, error)
 }
 
-type Middleware struct {
+type Auth struct {
 	UserService UserProvider
 	InternalSecret string
 }
 
-func (m *Middleware) AuthMiddleWare() gin.HandlerFunc {
+func (m *Auth) AuthMiddleWare() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		authHeader := ctx.GetHeader("Authorization")
 		var token string
@@ -29,32 +29,36 @@ func (m *Middleware) AuthMiddleWare() gin.HandlerFunc {
 		} else if tokenQuery != "" {
 			token = tokenQuery
 		} else {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization is not found!"})
+			ctx.Error(errors.Unauthorized("Authorization is not found!", nil))
+			ctx.Abort()
 			return		
 		}
-		// log.Println("token", token)
-		parsedToken, err := VerifyJWT(token)
+
+		parsedToken, err := auth.VerifyJWT(token)
 		if err != nil {
-			log.Println(err)
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			ctx.Error(errors.Unauthorized("Invalid token!", err))
+			ctx.Abort()
 			return
 		}
 		
-		userID, tokenVersion, err := GetDataFromToken(parsedToken)
+		userID, tokenVersion, err := auth.GetDataFromToken(parsedToken)
 		if err != nil {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			ctx.Error(errors.Unauthorized("Invalid token!", err))
+			ctx.Abort()
 			return
 		}
 
 		user, err := m.UserService.GetUserByID(userID)
 		if err != nil {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			ctx.Error(errors.Unauthorized("Invalid User ID!", err))
+			ctx.Abort()
 			return
 		}
 
 		// Check token version
 		if user.TokenVersion != tokenVersion {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization failed!"})
+			ctx.Error(errors.Unauthorized("Invalid token version!", nil))
+			ctx.Abort()
 			return
 		}
 
@@ -66,7 +70,7 @@ func (m *Middleware) AuthMiddleWare() gin.HandlerFunc {
 	}
 }
 
-func (m *Middleware) InternalAuthMiddleware() gin.HandlerFunc {
+func (m *Auth) InternalAuthMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		token := strings.TrimPrefix(
 			ctx.GetHeader("Authorization"),
@@ -74,7 +78,8 @@ func (m *Middleware) InternalAuthMiddleware() gin.HandlerFunc {
 		)
 
 		if token != m.InternalSecret {
-			ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized internal call!"})
+			ctx.Error(errors.Unauthorized("Unauthorized internal call!", nil))
+			ctx.Abort()
 			return
 		}
 

@@ -3,6 +3,7 @@ package document
 import (
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
+	defError "errors"
 	"collaborative-markdown-editor/internal/sync"
 	"context"
 	"log"
@@ -114,7 +115,7 @@ func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, docID uint64,
 		return err
 	}
 	if role == "viewer" {
-		return errors.ErrForbidden(nil)
+		return errors.Forbidden("Viewer can't create update!", nil)
 	}
 
 	err = s.repository.CreateUpdate(docID, userID, content)
@@ -234,7 +235,7 @@ func (s *DefaultService) ListCollaborators(ctx context.Context, docID uint64, re
 		return nil, err
 	}
 	if role == "viewer" {
-		return nil, errors.ErrForbidden(nil)
+		return nil, errors.Forbidden("Viewer can't show collaborators", nil)
 	}
 
 	// Map to API DTO
@@ -262,24 +263,27 @@ func (s *DefaultService) AddCollaborator(
 ) (*DocumentCollaboratorDTO, error) {
 	// only owner can add
 	requesterRole, err := s.repository.GetUserRole(docID, requesterID)
-	if err != nil || requesterRole != "owner" {
-		return nil, errors.ErrForbidden(nil)
+	if err != nil {
+		return nil, err
+	}
+	if requesterRole != "owner" {
+		return nil, errors.Forbidden("Only owner can add new collaborator!", nil)
 	}
 
 	// Prevent self-add
 	if requesterID == targetUserID {
-		return nil, errors.ErrInvalidInput(nil).WithMessage("can't add yourself")
+		return nil, errors.UnprocessableEntity("Can't add yourself!", nil)
 	}
 
 	// Ensure target user exists
 	user, err := s.userProvider.GetUserByID(targetUserID)
 	if err != nil {
-		return nil, errors.ErrInvalidInput(nil).WithMessage("can't find user")
+		return nil, errors.UnprocessableEntity("Can't find user!", nil)
 	}
 
 	if err := s.repository.AddCollaborator(ctx, docID, targetUserID, role); err != nil {
-		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			return nil, errors.ErrAlreadyExists(nil).WithMessage("user already added")
+		if defError.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, errors.Conflict("User already added!", err)
 		}
 		return nil, err
 	}
@@ -304,24 +308,28 @@ func (s *DefaultService) ChangeCollaboratorRole(
 ) (*DocumentCollaboratorDTO, error) {
 	// must be owner
 	requesterRole, err := s.repository.GetUserRole(docID, requesterID)
-	if err != nil || requesterRole != "owner" {
-		return nil, errors.ErrForbidden(nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if requesterRole != "owner" {
+		return nil, errors.Forbidden("Only owner can change role!", nil)
 	}
 
 	// Prevent self-demotion
 	if requesterID == targetUserID {
-		return nil, errors.ErrInvalidInput(nil).WithMessage("can't add yourself")
+		return nil, errors.UnprocessableEntity("Can't add yourself!", nil)
 	}
 
 	// Ensure target collaborator exists
 	currentRole, err := s.repository.GetUserRole(docID, targetUserID)
 	if err != nil {
-		return nil, errors.ErrInvalidInput(nil).WithMessage("can't find user")
+		return nil, errors.UnprocessableEntity("Can't find user!", err)
 	}
 
 	//  No-op check
 	if currentRole == newRole {
-		return nil, errors.ErrUnprocessableEntity(nil).WithMessage("user role already match")
+		return nil, errors.UnprocessableEntity("User role already match", nil)
 	}
 
 	if err := s.repository.UpdateCollaboratorRole(
@@ -367,18 +375,21 @@ func (s *DefaultService) RemoveCollaborator(
 ) error {
 	// must be owner
 	requesterRole, err := s.repository.GetUserRole(docID, requesterID)
-	if err != nil || requesterRole != "owner" {
-		return errors.ErrForbidden(nil)
+	if err != nil {
+		return err
+	}
+	if requesterRole != "owner" {
+		return errors.Forbidden("Only owner can remove collaborator", nil)
 	}
 
 	// Prevent owner removing themselves
 	if requesterID == targetUserID {
-		return errors.ErrInvalidInput(nil).WithMessage("can't remove yourself")
+		return errors.UnprocessableEntity("Can't remove yourself", nil)
 	}
 
 	// Ensure target exists
 	if _, err := s.repository.GetUserRole(docID, targetUserID); err != nil {
-		return errors.ErrInvalidInput(nil).WithMessage("can't find user")
+		return errors.UnprocessableEntity("Can't find user", err)
 	}
 
 	if err := s.repository.RemoveCollaborator(ctx, docID, targetUserID); err != nil {
@@ -404,11 +415,11 @@ func (s *DefaultService) DeleteDocument(ctx context.Context, docID uint64, userI
 	err := s.repository.GetCollaborator(docID, userID, &collab)
 
 	if err != nil {
-		return errors.ErrUnprocessableEntity(err).WithMessage("you're not the collaborator!")
+		return errors.UnprocessableEntity("You're not collaborator", err)
 	}
 
 	if collab.Role != "owner" {
-		return errors.ErrUnprocessableEntity(err).WithMessage("only owner can delete document!")
+		return errors.Forbidden("Only owner can delete document", nil)
 	}
 
 	err = s.repository.DeleteDocument(ctx, docID)

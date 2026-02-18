@@ -25,22 +25,18 @@ type CreateRequest struct {
 func (h *Handler) Create(c *gin.Context) {
 	var form CreateRequest
 	if err := c.ShouldBindJSON(&form); err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err))
+		c.Error(errors.NewValidationError(err))
 		return
 	}
 
-	userID, exists := c.Get("user_id")
-	if !exists {
-		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
-		return
-	}
+	userID, _ := c.Get("user_id")
 
 	doc := &domain.Document{
 		Title:   form.Title,
 	}
 
 	if err := h.service.CreateUserDocument(userID.(uint64), doc); err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 
@@ -48,11 +44,7 @@ func (h *Handler) Create(c *gin.Context) {
 }
 
 func (h *Handler) ShowUserDocuments(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
-		return
-	}
+	userID, _ := c.Get("user_id")
 
 	// Parse query params with defaults
 	page := 1
@@ -70,7 +62,7 @@ func (h *Handler) ShowUserDocuments(c *gin.Context) {
 
 	docs, meta, err := h.service.GetUserDocuments(userID.(uint64), page, pageSize)
 	if err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 
@@ -79,11 +71,7 @@ func (h *Handler) ShowUserDocuments(c *gin.Context) {
 
 
 func (h *Handler) ShowSharedDocuments(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
-		return
-	}
+	userID, _ := c.Get("user_id")
 
 	// Parse query params with defaults
 	page := 1
@@ -101,7 +89,7 @@ func (h *Handler) ShowSharedDocuments(c *gin.Context) {
 
 	docs, meta, err := h.service.GetSharedDocuments(userID.(uint64), page, pageSize)
 	if err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 
@@ -111,21 +99,16 @@ func (h *Handler) ShowSharedDocuments(c *gin.Context) {
 func (h *Handler) ShowDocument(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)
-	
 	if err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		c.Error(err)
 		return
 	}
 	
-	userID, exists := c.Get("user_id")
-	if !exists {
-		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
-		return
-	}
+	userID, _ := c.Get("user_id")
 
 	doc, err := h.service.GetDocumentByID(docIDUint, userID.(uint64))
 	if err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 
@@ -135,21 +118,21 @@ func (h *Handler) ShowDocument(c *gin.Context) {
 func (h *Handler) ShowUserRole(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)
-	
 	if err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		c.Error(err)
 		return
 	}
+
 	userIDStr := c.Query("user_id")
 	userIDUint, err := strconv.ParseUint(userIDStr, 10, 64)
 	if err != nil {
-		errors.HandleError(c, errors.ErrUnauthorized(err).WithMessage("user not found"))
+		c.Error(err)
 		return
 	}
 
 	role, err := h.service.FetchUserRole(docIDUint, userIDUint)
 	if err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 
@@ -159,15 +142,14 @@ func (h *Handler) ShowUserRole(c *gin.Context) {
 func (h *Handler) ShowDocumentState(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)
-	
 	if err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		c.Error(err)
 		return
 	}
 	
 	doc, err := h.service.GetDocumentState(uint64(docIDUint))
 	if err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 
@@ -178,7 +160,7 @@ func (h *Handler) CreateUpdate(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docID, err := strconv.ParseUint(docIDStr, 10, 64)
 	if err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		c.Error(err)
 		return
 	}
 
@@ -187,13 +169,13 @@ func (h *Handler) CreateUpdate(c *gin.Context) {
 		10, 64,
 	)
 	if err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err))
+		c.Error(errors.UnprocessableEntity("X-User-Id not found in header", err))
 		return
 	}
 
 	updateBinary, err := io.ReadAll(c.Request.Body)
 	if err != nil || len(updateBinary) == 0 {
-		errors.HandleError(c, errors.ErrInvalidInput(err))
+		c.Error(errors.UnprocessableEntity("Can't read update binary or empty update", err))
 		return
 	}
 
@@ -204,7 +186,7 @@ func (h *Handler) CreateUpdate(c *gin.Context) {
 		updateBinary,	// raw Yjs binary
 	)
 	if err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 
@@ -215,13 +197,13 @@ func (h *Handler) CreateSnapshot(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docID, err := strconv.ParseUint(docIDStr, 10, 64)
 	if err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		c.Error(err)
 		return
 	}
 
 	snapshotBinary, err := io.ReadAll(c.Request.Body)
 	if err != nil || len(snapshotBinary) == 0 {
-		errors.HandleError(c, errors.ErrInvalidInput(err))
+		c.Error(errors.UnprocessableEntity("Can't read snapshot binary or empty snapshot", err))
 		return
 	}
 
@@ -231,7 +213,7 @@ func (h *Handler) CreateSnapshot(c *gin.Context) {
 		snapshotBinary,	// raw Yjs binary
 	)
 	if err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 
@@ -241,15 +223,11 @@ func (h *Handler) CreateSnapshot(c *gin.Context) {
 func (h *Handler) ListCollaborators(c *gin.Context) {
 	docID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		c.Error(err)
 		return
 	}
 
-	userID, exists := c.Get("user_id")
-	if !exists {
-		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
-		return
-	}
+	userID, _ := c.Get("user_id")
 
 	result, err := h.service.ListCollaborators(
 		c.Request.Context(),
@@ -257,7 +235,7 @@ func (h *Handler) ListCollaborators(c *gin.Context) {
 		userID.(uint64),
 	)
 	if err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 
@@ -272,21 +250,17 @@ type AddCollaboratorRequest struct {
 func (h *Handler) AddCollaborator(c *gin.Context) {
 	docID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		c.Error(err)
 		return
 	}
 
 	var req AddCollaboratorRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err))
+		c.Error(errors.NewValidationError(err))
 		return
 	}
 
-	requesterID, exists := c.Get("user_id")
-	if !exists {
-		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
-		return
-	}
+	requesterID, _ := c.Get("user_id")
 
 	result, err := h.service.AddCollaborator(
 		c.Request.Context(),
@@ -296,7 +270,7 @@ func (h *Handler) AddCollaborator(c *gin.Context) {
 		req.Role,
 	)
 	if err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 
@@ -311,21 +285,17 @@ type ChangeCollaboratorRoleRequest struct {
 func (h *Handler) ChangeCollaboratorRole(c *gin.Context) {
 	docID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		c.Error(err)
 		return
 	}
 
 	var req ChangeCollaboratorRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err))
+		c.Error(errors.NewValidationError(err))
 		return
 	}
 
-	requesterID, exists := c.Get("user_id")
-	if !exists {
-		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
-		return
-	}
+	requesterID, _ := c.Get("user_id")
 
 	result, err := h.service.ChangeCollaboratorRole(
 		c.Request.Context(),
@@ -336,7 +306,7 @@ func (h *Handler) ChangeCollaboratorRole(c *gin.Context) {
 	)
 
 	if err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 
@@ -346,21 +316,17 @@ func (h *Handler) ChangeCollaboratorRole(c *gin.Context) {
 func (h *Handler) RemoveCollaborator(c *gin.Context) {
 	docID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err).WithMessage("invalid document id"))
+		c.Error(err)
 		return
 	}
 
 	targetUserID, err := strconv.ParseUint(c.Param("userId"), 10, 64)
 	if err != nil {
-		errors.ErrInvalidInput(err).WithMessage("invalid target user id")
+		c.Error(err)
 		return
 	}
 
-	requesterID, exists := c.Get("user_id")
-	if !exists {
-		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
-		return
-	}
+	requesterID, _ := c.Get("user_id")
 
 	err = h.service.RemoveCollaborator(
 		c.Request.Context(),
@@ -370,7 +336,7 @@ func (h *Handler) RemoveCollaborator(c *gin.Context) {
 	)
 
 	if err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 
@@ -383,20 +349,14 @@ func (h *Handler) DeleteDocument(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docID, err := strconv.ParseUint(docIDStr, 10, 64)
 	if err != nil {
-		errors.HandleError(c,
-			errors.ErrInvalidInput(err).WithMessage("invalid document id"),
-		)
+		c.Error(err)
 		return
 	}
 
-	userID, exists := c.Get("user_id")
-	if !exists {
-		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
-		return
-	}
+	userID, _ := c.Get("user_id")
 
 	if err := h.service.DeleteDocument(c.Request.Context(), docID, userID.(uint64)); err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 

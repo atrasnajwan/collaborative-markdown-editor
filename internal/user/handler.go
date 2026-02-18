@@ -1,7 +1,7 @@
 package user
 
 import (
-	"collaborative-markdown-editor/auth"
+	"collaborative-markdown-editor/internal/auth"
 	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
@@ -38,7 +38,7 @@ type FormRegister struct {
 func (h *Handler) Register(c *gin.Context) {
 	var form FormRegister
 	if err := c.ShouldBindJSON(&form); err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err))
+		c.Error(errors.NewValidationError(err))
 		return
 	}
 
@@ -50,7 +50,7 @@ func (h *Handler) Register(c *gin.Context) {
 	}
 
 	if err := h.service.Register(user); err != nil {
-		errors.HandleError(c, errors.ErrUnprocessableEntity(err))
+		c.Error(err)
 		return
 	}
 
@@ -61,24 +61,24 @@ func (h *Handler) Register(c *gin.Context) {
 func (h *Handler) Login(c *gin.Context) {
 	var form FormLogin
 	if err := c.ShouldBindJSON(&form); err != nil {
-		errors.HandleError(c, errors.ErrInvalidInput(err))
+		c.Error(errors.NewValidationError(err))
 		return
 	}
 
 	user, err := h.service.Login(form.Email, form.Password)
 	if err != nil {
-		errors.HandleError(c, errors.ErrUnprocessableEntity(err))
+		c.Error(err)
 		return
 	}
 
 	accessToken, err := auth.GenerateAccessToken(user.ID, user.TokenVersion)
 	if err != nil {
-		errors.HandleError(c, errors.ErrInternalServer(err))
+		c.Error(err)
 		return
 	}
 	refreshToken, err := auth.GenerateRefreshToken(user.ID, user.TokenVersion)
 	if err != nil {
-		errors.HandleError(c, errors.ErrInternalServer(err))
+		c.Error(err)
 		return
 	}
 
@@ -102,38 +102,38 @@ func (h *Handler) Login(c *gin.Context) {
 func (h *Handler) RefreshToken(c *gin.Context) {
 	refreshToken, err := c.Cookie("refresh_token")
 	if err != nil {
-		errors.HandleError(c, errors.ErrUnauthorized(err))
+		c.Error(errors.NewValidationError(err))
 		return
 	}
 
 	token, err := auth.VerifyJWT(refreshToken)
 	if err != nil {
-		errors.HandleError(c, errors.ErrUnauthorized(err).WithMessage("Invalid token or expired!"))
+		c.Error(errors.Unauthorized("Invalid token or expired!", err))
 		return
 	}
 
 	userID, tokenVersion, err := auth.GetDataFromToken(token) 
 	if err != nil {
-		errors.HandleError(c, errors.ErrUnauthorized(err).WithMessage("Invalid token"))
+		c.Error(errors.Unauthorized("Invalid token!", err))
 		return
 	}
 
 	user, err := h.service.GetUserByID(userID)
 	if err != nil {
-		errors.HandleError(c, errors.ErrUnauthorized(err).WithMessage("User not found"))
+		c.Error(errors.UnprocessableEntity("User not found!", err))
 		return
 	}
 
 	// Check token version
 	if user.TokenVersion != tokenVersion {
-		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("Invalid token!"))
+		c.Error(errors.Unauthorized("Invalid token version!", nil))
 		return
 	}
 
 	// Issue new access token
 	newAccessToken, err := auth.GenerateAccessToken(user.ID, user.TokenVersion)
 	if err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 
@@ -158,15 +158,10 @@ func (h *Handler) Logout(c *gin.Context) {
 
 // GetProfile handles getting the current user's profile
 func (h *Handler) GetProfile(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		errors.HandleError(c, errors.ErrUnauthorized(nil).WithMessage("user not found"))
-		return
-	}
-
+	userID, _ := c.Get("user_id")
 	user, err := h.service.GetUserByID(userID.(uint64))
 	if err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 
@@ -181,7 +176,7 @@ func (h *Handler) SearchUsers(c *gin.Context) {
 		query,
 	)
 	if err != nil {
-		errors.HandleError(c, err)
+		c.Error(err)
 		return
 	}
 

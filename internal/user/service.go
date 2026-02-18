@@ -38,13 +38,13 @@ func (s *DefaultService) Register(user *domain.User) error {
 		return err
 	}
 	if err == nil {
-		return errors.ErrUnprocessableEntity(nil).WithMessage("User already registered")
+		return errors.UnprocessableEntity("User already registered", nil)
 	}
 
 	// Hash the password before saving
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return errors.ErrUnprocessableEntity(err)
+		return err
 	}
 	user.PasswordHash = string(hashedPassword)
 	user.IsActive = true
@@ -58,20 +58,19 @@ func (s *DefaultService) Login(email, password string) (*domain.User, error) {
 	// Find user by email
 	user, err := s.repository.FindByEmail(email)
 	if err != nil {
-		return nil, errors.ErrUnauthorized(err).WithMessage("User not found")
+		return nil, errors.Unauthorized("User not found!", err)
 	}
 
 	// Check if user is active
 	if !user.IsActive {
-		return nil, errors.ErrUnauthorized(nil).WithMessage("User is not active")
+		return nil,errors.Unauthorized("User not active!", err)
 	}
 
 	// Check password
 	err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password))
 	if err != nil {
-		return nil, errors.ErrUnprocessableEntity(err).WithMessage("Wrong password")
+		return nil, errors.UnprocessableEntity("Wrong Password!", err)
 	}
-
 	return user, nil
 }
 
