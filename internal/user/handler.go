@@ -5,6 +5,8 @@ import (
 	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
+	"collaborative-markdown-editor/redis"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -14,11 +16,12 @@ import (
 // Handler handles HTTP requests for users
 type Handler struct {
 	service Service
+	cache *redis.Cache
 }
 
 // NewHandler creates a new user handler
-func NewHandler(service Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service Service, cache *redis.Cache) *Handler {
+	return &Handler{service: service, cache: cache}
 }
 
 // FormLogin represents login form data
@@ -63,7 +66,7 @@ type UpdateProfileRequest struct {
 }
 
 func (h *Handler) UpdateProfile(c *gin.Context) {
-    userID := c.GetUint("user_id")
+    userID, _ := c.Get("user_id")
 
     var req UpdateProfileRequest
     if err := c.ShouldBindJSON(&req); err != nil {
@@ -71,7 +74,7 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
         return
     }
 
-    user, err := h.service.UpdateUser(c.Request.Context(), uint64(userID), req)
+    user, err := h.service.UpdateUser(c.Request.Context(), userID.(uint64), req)
     if err != nil {
         c.Error(err)
         return
@@ -86,7 +89,7 @@ type ChangePasswordRequest struct {
 }
 
 func (h *Handler) ChangePassword(c *gin.Context) {
-    userID := c.GetUint("user_id")
+    userID, _ := c.Get("user_id")
 
     var req ChangePasswordRequest
     if err := c.ShouldBindJSON(&req); err != nil {
@@ -94,7 +97,7 @@ func (h *Handler) ChangePassword(c *gin.Context) {
         return
     }
 
-    err := h.service.ChangePassword(c.Request.Context(), uint64(userID), req)
+    err := h.service.ChangePassword(c.Request.Context(), userID.(uint64), req)
     if err != nil {
         c.Error(err)
         return
@@ -172,7 +175,7 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 
 	// Check token version
 	if user.TokenVersion != tokenVersion {
-		c.Error(errors.Unauthorized("Invalid token version!", nil))
+		c.Error(errors.Unauthorized("Session expired!", nil))
 		return
 	}
 
@@ -191,14 +194,18 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 
 // Logout handles user logout
 func (h *Handler) Logout(c *gin.Context) {
-	userID := c.GetUint("user_id")
+	userID, _ := c.Get("user_id")
 
-	err := h.service.IncreaseTokenVersion(uint64(userID))
+	err := h.service.IncreaseTokenVersion(userID.(uint64))
 	if err != nil {
 		log.Printf("%v\n", err.Error())
 	}
 	// Clear refresh cookie
 	c.SetCookie("refresh_token", "", -1, "/", "", true, true)
+	// invalidate cache/redis
+	cacheKey := fmt.Sprintf("user:version:%d", userID)
+	h.cache.Invalidate(c.Request.Context(), cacheKey)
+	
 	c.Status(http.StatusNoContent)
 }
 

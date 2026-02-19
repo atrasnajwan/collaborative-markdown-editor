@@ -10,11 +10,11 @@ type User struct {
 	Name         string
 	Email        string `gorm:"uniqueIndex"`
 	Password     string `gorm:"-"` // input only, not stored in db
-	PasswordHash string 
+	PasswordHash string `gorm:"not null"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	IsActive     bool `gorm:"default:true"`
-	TokenVersion int64
+	TokenVersion int64 `gorm:"not null;default:1"`
 	Documents    []Document
 }
 

@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -23,6 +24,7 @@ type Config struct {
 
 	// Redis configuration
 	RedisAddress string
+	RedisPollSize int
 
 	// JWT configuration
 	JWTSecret string
@@ -75,6 +77,7 @@ func LoadConfig() {
 		DBPassword:        	getEnv("DB_PASSWORD", "postgres"),
 		DBName:            	getEnv("DB_NAME", "markdown_editor"),
 		RedisAddress:      	getEnv("REDIS_ADDRESS", "localhost:6379"),
+		RedisPollSize:      getEnv("REDIS_POOL_SIZE", 10),
 		SyncServerAddress: 	getEnv("SYNC_ADDRESS", "http://localhost:8787"),
 		SyncServerSecret:  	getEnv("SYNC_SECRET", "collab-sync-secret"),
 		JWTSecret:         	jwtSecret,
@@ -83,13 +86,34 @@ func LoadConfig() {
 	}
 }
 
-// getEnv gets an environment variable or returns a default value
-func getEnv(key, defaultValue string) string {
-	value := os.Getenv(key)
-	if value == "" {
+// gets an environment variable or returns a default value
+func getEnv[T any](key string, defaultValue T) T {
+	value, exists := os.LookupEnv(key)
+	if !exists {
 		return defaultValue
 	}
-	return value
+
+	var result any
+	switch any(defaultValue).(type) {
+	case string:
+		result = value
+	case int:
+		i, err := strconv.Atoi(value)
+		if err != nil {
+			return defaultValue
+		}
+		result = i
+	case bool:
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return defaultValue
+		}
+		result = b
+	default:
+		return defaultValue
+	}
+
+	return result.(T)
 }
 
 // generateRandomSecret generates a random secret of the specified length

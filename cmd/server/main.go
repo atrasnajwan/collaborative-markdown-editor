@@ -7,6 +7,7 @@ import (
 	"collaborative-markdown-editor/internal/middleware"
 	"collaborative-markdown-editor/internal/sync"
 	"collaborative-markdown-editor/internal/user"
+	"collaborative-markdown-editor/redis"
 	"context"
 	"fmt"
 	"log"
@@ -34,6 +35,10 @@ func main() {
 	// Seed database with initial data (for development)
 	db.SeedData()
 
+	// redis
+	redisClient, _ := redis.NewRedisClient()
+	redisCache := redis.NewCache(redisClient)
+
 	// Initialize repository
 	userRepo := user.NewRepository(db.AppDb)
 	docRepo := document.NewRepository(db.AppDb)
@@ -43,10 +48,14 @@ func main() {
 	docService := document.NewService(docRepo, userService, syncClient)
 	// Initialize handler
 	docHandler := document.NewHandler(docService)
-	userHandler := user.NewHandler(userService)
+	userHandler := user.NewHandler(userService, redisCache)
 	// Initialize middleware
-	authMiddleware := &middleware.Auth{UserService: userService, InternalSecret: config.AppConfig.InternalSecret}
-	
+	authMiddleware := &middleware.Auth{
+		UserService: userService,
+		InternalSecret: config.AppConfig.InternalSecret,
+		Cache: redisCache,
+	}
+
 	// Initialize Gin router
 	router := gin.New()
 	router.Use(middleware.ErrorHandler())

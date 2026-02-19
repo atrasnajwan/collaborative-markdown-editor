@@ -4,7 +4,10 @@ import (
 	"collaborative-markdown-editor/internal/auth"
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
+	"collaborative-markdown-editor/redis"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -16,6 +19,7 @@ type UserProvider interface {
 type Auth struct {
 	UserService UserProvider
 	InternalSecret string
+	Cache *redis.Cache
 }
 
 func (m *Auth) AuthMiddleWare() gin.HandlerFunc {
@@ -48,22 +52,30 @@ func (m *Auth) AuthMiddleWare() gin.HandlerFunc {
 			return
 		}
 
-		user, err := m.UserService.GetUserByID(userID)
-		if err != nil {
-			ctx.Error(errors.Unauthorized("Invalid User ID!", err))
-			ctx.Abort()
-			return
+		// try get token version from cache/redis
+		cacheKey := fmt.Sprintf("user:version:%d", userID)
+		var tokenVersionDB int64
+		found, err := m.Cache.Get(ctx.Request.Context(), cacheKey, &tokenVersionDB)
+
+		if err != nil || !found {
+			user, err := m.UserService.GetUserByID(userID)
+			if err != nil {
+				ctx.Error(errors.Unauthorized("Invalid User ID!", err))
+				ctx.Abort()
+				return
+			}
+			tokenVersionDB = user.TokenVersion
+			// set to cache/redis
+			m.Cache.Set(ctx.Request.Context(), cacheKey, tokenVersionDB, 15*time.Minute)
 		}
 
 		// Check token version
-		if user.TokenVersion != tokenVersion {
-			ctx.Error(errors.Unauthorized("Invalid token version!", nil))
+		if tokenVersionDB != tokenVersion {
+			ctx.Error(errors.Unauthorized("Session expired. Please log in again.", nil))
 			ctx.Abort()
 			return
 		}
 
-		userName := ctx.Query("userName")
-		ctx.Set("user_name", userName)
 		ctx.Set("user_id", userID)
 		ctx.Set("jwt_token", token)
 		ctx.Next()
