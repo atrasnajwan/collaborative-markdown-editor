@@ -3,9 +3,11 @@ package document
 import (
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
-	defError "errors"
 	"collaborative-markdown-editor/internal/sync"
+	"collaborative-markdown-editor/redis"
 	"context"
+	defError "errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -13,10 +15,10 @@ import (
 )
 
 type Service interface {
-	CreateUserDocument(userID uint64, document *domain.Document) error
+	CreateUserDocument(ctx context.Context, userID uint64, document *domain.Document) error
 	RenameDocument(ctx context.Context, docID uint64, userID uint64, title string) (*domain.Document, error)
 	CreateDocumentUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error
-	GetUserDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
+	GetUserDocuments(ctx context.Context, userID uint64, page, pageSize int) (*PaginatedDocuments, error)
 	GetSharedDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
 	GetDocumentByID(docID uint64, userID uint64) (*DocumentShowResponse, error)
 	GetDocumentState(docID uint64) (*DocumentStateResponse, error)
@@ -37,19 +39,27 @@ type DefaultService struct {
 	repository   DocumentRepository
 	syncClient   *sync.SyncClient
 	userProvider UserProvider
+	cache *redis.Cache
 }
 
-func NewService(repository DocumentRepository, userProvider UserProvider, syncClient *sync.SyncClient) Service {
+func NewService(repository DocumentRepository, userProvider UserProvider, syncClient *sync.SyncClient, cache *redis.Cache) Service {
 	return &DefaultService{
 		repository:   repository,
 		syncClient:   syncClient,
 		userProvider: userProvider,
+		cache: cache,
 	}
 }
 
-func (s *DefaultService) CreateUserDocument(userId uint64, document *domain.Document) error {
+func (s *DefaultService) CreateUserDocument(ctx context.Context, userID uint64, document *domain.Document) error {
 	// Create document for user
-	return s.repository.Create(userId, document)
+	err := s.repository.Create(ctx, userID, document)
+	if err == nil {
+		// increase cache key, so any new fetch will get new version
+    	versionKey := fmt.Sprintf("user:%d:docs:version", userID)
+    	s.cache.IncrementVersion(ctx, versionKey)
+	}
+	return err
 }
 
 func (s *DefaultService) RenameDocument(ctx context.Context, docID uint64, userID uint64, title string) (*domain.Document, error) {
@@ -64,18 +74,41 @@ func (s *DefaultService) RenameDocument(ctx context.Context, docID uint64, userI
         }
         return nil, err
     }
+	// increase cache key, so any new fetch will get new version
+    versionKey := fmt.Sprintf("user:%d:docs:version", userID)
+    s.cache.IncrementVersion(ctx, versionKey)
 
     return doc, nil
 }
 
-func (s *DefaultService) GetUserDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
-	documents, meta, err := s.repository.ListDocumentByUserID(userId, page, pageSize)
+type PaginatedDocuments struct {
+    Data []DocumentShowResponse `json:"data"`
+    Meta DocumentsMeta `json:"meta"`
+}
 
+func (s *DefaultService) GetUserDocuments(ctx context.Context, userID uint64, page, pageSize int) (*PaginatedDocuments, error) {
+	// Get the current data version for this user's documents
+    versionKey := fmt.Sprintf("user:%d:docs:version", userID)
+    v := s.cache.GetVersion(ctx, versionKey)
+
+	cacheKey := fmt.Sprintf("docs:u:%d:v:%d:p:%d:ps:%d", userID, v, page, pageSize)
+
+	var result PaginatedDocuments
+	// get data from cache
+    found, _ := s.cache.Get(ctx, cacheKey, &result)
+    if found {
+        return &result, nil
+    }
+
+	documents, meta, err := s.repository.ListDocumentByUserID(ctx, userID, page, pageSize)
 	if err != nil {
-		return []DocumentShowResponse{}, DocumentsMeta{}, err
+		return nil, err
 	}
+	result = PaginatedDocuments{Data: documents, Meta: meta}
+	// set value to cache
+	go s.cache.Set(context.Background(), cacheKey, result, 24*time.Hour)
 
-	return documents, meta, nil
+	return &result, nil
 }
 
 func (s *DefaultService) GetSharedDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
@@ -429,7 +462,7 @@ func (s *DefaultService) RemoveCollaborator(
 
 func (s *DefaultService) DeleteDocument(ctx context.Context, docID uint64, userID uint64) error {
 	var collab domain.DocumentCollaborator
-	err := s.repository.GetCollaborator(docID, userID, &collab)
+	err := s.repository.GetCollaborator(ctx, docID, userID, &collab)
 
 	if err != nil {
 		return errors.UnprocessableEntity("You're not collaborator", err)
@@ -443,14 +476,24 @@ func (s *DefaultService) DeleteDocument(ctx context.Context, docID uint64, userI
 	if err != nil {
 		return err
 	}
-
+	// increase cache key, so any new fetch will get new version
+    versionKey := fmt.Sprintf("user:%d:docs:version", userID)
+    s.cache.IncrementVersion(ctx, versionKey)
+	
 	// send update to sync-server
-	err = s.syncClient.RemoveDocument(
-		ctx,
-		docID,
-	)
-	if err != nil {
-		log.Printf("failed to notify sync server: %v", err)
-	}
+	go func(id uint64) {
+		// context with 5s timeout
+        bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+		
+		err := s.syncClient.RemoveDocument(
+			bgCtx,
+			docID,
+		)
+		if err != nil {
+			log.Printf("[SYNC SERVER ERROR] Failed to notify doc %d is deleted! %v", id, err)
+		}
+    }(docID)
+	
 	return  nil
 }

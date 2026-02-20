@@ -3,7 +3,10 @@ package user
 import (
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
+	"collaborative-markdown-editor/redis"
 	"context"
+	"fmt"
+	"log"
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
@@ -16,20 +19,21 @@ type Service interface {
 	UpdateUser(ctx context.Context, userID uint64, req UpdateProfileRequest) (domain.SafeUser, error)
 	ChangePassword(ctx context.Context, userID uint64, req ChangePasswordRequest) error
 	Login(email, password string) (*domain.User, error)
+	Logout(ctx context.Context, userID uint64)
 	GetUserByID(id uint64) (*domain.User, error)
 	DeactivateUser(id uint64) error
-	IncreaseTokenVersion(id uint64) error
 	SearchUsers(ctx context.Context, query string) ([]domain.SafeUser, error)
 }
 
 // DefaultService implements Service
 type DefaultService struct {
 	repository UserRepository
+	cache *redis.Cache
 }
 
 // NewService creates a new user service
-func NewService(repository UserRepository) Service {
-	return &DefaultService{repository: repository}
+func NewService(repository UserRepository, cache *redis.Cache) Service {
+	return &DefaultService{repository: repository, cache: cache}
 }
 
 // Register registers a new user
@@ -121,13 +125,19 @@ func (s *DefaultService) Login(email, password string) (*domain.User, error) {
 	return user, nil
 }
 
+func (s *DefaultService) Logout(ctx context.Context, userID uint64) {
+	err := s.repository.UpdateTokenVersion(userID)
+	if err != nil {
+		log.Printf("%v\n", err.Error())
+	}
+	// invalidate cache/redis
+	cacheKey := fmt.Sprintf("user:version:%d", userID)
+	s.cache.Invalidate(ctx, cacheKey)
+}
+
 // GetUserByID gets a user by ID
 func (s *DefaultService) GetUserByID(id uint64) (*domain.User, error) {
 	return s.repository.FindByID(id)
-}
-
-func (s *DefaultService) IncreaseTokenVersion(id uint64) error {
-	return s.repository.UpdateTokenVersion(id)
 }
 
 // DeactivateUser deactivates a user

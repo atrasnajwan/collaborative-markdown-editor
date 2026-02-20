@@ -3,6 +3,7 @@ package document
 import (
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
+	"collaborative-markdown-editor/internal/utils"
 	"io"
 	"net/http"
 	"strconv"
@@ -35,7 +36,7 @@ func (h *Handler) Create(c *gin.Context) {
 		Title:   form.Title,
 	}
 
-	if err := h.service.CreateUserDocument(userID.(uint64), doc); err != nil {
+	if err := h.service.CreateUserDocument(c.Request.Context(), userID.(uint64), doc); err != nil {
 		c.Error(err)
 		return
 	}
@@ -71,47 +72,21 @@ func (h *Handler) Rename(c *gin.Context) {
 func (h *Handler) ShowUserDocuments(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
-	// Parse query params with defaults
-	page := 1
-	pageSize := 10
-	if p := c.Query("page"); p != "" {
-		if v, err := strconv.Atoi(p); err == nil && v > 0 {
-			page = v
-		}
-	}
-	if ps := c.Query("per_page"); ps != "" {
-		if v, err := strconv.Atoi(ps); err == nil && v > 0 {
-			pageSize = v
-		}
-	}
-
-	docs, meta, err := h.service.GetUserDocuments(userID.(uint64), page, pageSize)
+	page, pageSize := utils.GetPaginationParams(c)
+	result, err := h.service.GetUserDocuments(c.Request.Context(), userID.(uint64), page, pageSize)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": docs, "meta": meta})
+	c.JSON(http.StatusOK, result)
 }
 
 
 func (h *Handler) ShowSharedDocuments(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
-	// Parse query params with defaults
-	page := 1
-	pageSize := 10
-	if p := c.Query("page"); p != "" {
-		if v, err := strconv.Atoi(p); err == nil && v > 0 {
-			page = v
-		}
-	}
-	if ps := c.Query("per_page"); ps != "" {
-		if v, err := strconv.Atoi(ps); err == nil && v > 0 {
-			pageSize = v
-		}
-	}
-
+	page, pageSize := utils.GetPaginationParams(c)
 	docs, meta, err := h.service.GetSharedDocuments(userID.(uint64), page, pageSize)
 	if err != nil {
 		c.Error(err)

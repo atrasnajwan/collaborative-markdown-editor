@@ -5,9 +5,6 @@ import (
 	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
-	"collaborative-markdown-editor/redis"
-	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -16,12 +13,11 @@ import (
 // Handler handles HTTP requests for users
 type Handler struct {
 	service Service
-	cache *redis.Cache
 }
 
 // NewHandler creates a new user handler
-func NewHandler(service Service, cache *redis.Cache) *Handler {
-	return &Handler{service: service, cache: cache}
+func NewHandler(service Service) *Handler {
+	return &Handler{service: service}
 }
 
 // FormLogin represents login form data
@@ -196,15 +192,9 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 func (h *Handler) Logout(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
-	err := h.service.IncreaseTokenVersion(userID.(uint64))
-	if err != nil {
-		log.Printf("%v\n", err.Error())
-	}
+	h.service.Logout(c.Request.Context(), userID.(uint64))
 	// Clear refresh cookie
 	c.SetCookie("refresh_token", "", -1, "/", "", true, true)
-	// invalidate cache/redis
-	cacheKey := fmt.Sprintf("user:version:%d", userID)
-	h.cache.Invalidate(c.Request.Context(), cacheKey)
 	
 	c.Status(http.StatusNoContent)
 }

@@ -79,3 +79,22 @@ func (c *Cache) Invalidate(ctx context.Context, key string) error {
 	}
 	return c.Client.Del(ctx, key).Err()
 }
+
+func (c *Cache) GetVersion(ctx context.Context, namespace string) int64 {
+    if c.Client == nil {
+        return 0
+    }
+    // Namespace would be something like "user:1:docs:version"
+    val, _ := c.Client.Get(ctx, namespace).Int64()
+    return val
+}
+
+func (c *Cache) IncrementVersion(ctx context.Context, namespace string) {
+    if c.Client == nil {
+		return
+	}
+	// same like .Set with no ttl (stay forever)
+    c.Client.Incr(ctx, namespace)
+	// set expire to 1 week
+    c.Client.Expire(ctx, namespace, 7*24*time.Hour)
+}

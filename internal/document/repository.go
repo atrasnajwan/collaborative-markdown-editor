@@ -10,10 +10,10 @@ import (
 )
 
 type DocumentRepository interface {
-	Create(userID uint64, document *domain.Document) error
+	Create(ctx context.Context, userID uint64, document *domain.Document) error
 	UpdateTitle(ctx context.Context, docID uint64, userID uint64, newTitle string) (*domain.Document, error)
 	CreateUpdate(id uint64, userID uint64, content []byte) error
-	ListDocumentByUserID(userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
+	ListDocumentByUserID(ctx context.Context, userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
 	ListSharedDocuments(userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
 	GetUserRole(docID uint64, userID uint64) (string, error)
 	FindByID(id uint64) (*domain.Document, error)
@@ -22,7 +22,7 @@ type DocumentRepository interface {
 	LastSnapshot(docID uint64, snapshot *domain.DocumentSnapshot) error
 	LastSnapshotSeq(docID uint64, lastSnapshotSeq *uint64) error
 	UpdatesFromSnapshot(docID uint64, snapshotSeq uint64, updates *[]domain.DocumentUpdate) error
-	GetCollaborator(docID uint64, userID uint64, collab *domain.DocumentCollaborator) error
+	GetCollaborator(ctx context.Context, docID uint64, userID uint64, collab *domain.DocumentCollaborator) error
 	ListDocumentCollaborators(ctx context.Context, docID uint64) ([]collaboratorRow, error)
 	AddCollaborator(ctx context.Context, docID uint64, userID uint64, role string) error
 	UpdateCollaboratorRole(ctx context.Context, docID uint64, userID uint64, role string) error
@@ -40,7 +40,7 @@ func NewRepository(db *gorm.DB) DocumentRepository {
 }
 
 // Create creates a new user
-func (r *DocumentRepositoryImpl) Create(userID uint64, document *domain.Document) error {
+func (r *DocumentRepositoryImpl) Create(ctx context.Context, userID uint64, document *domain.Document) error {
 	document.UserID = userID
 	document.CreatedAt = time.Now().UTC() // Use UTC for consistency
 	document.UpdatedAt = time.Now().UTC()
@@ -51,26 +51,26 @@ func (r *DocumentRepositoryImpl) Create(userID uint64, document *domain.Document
 			AddedAt: time.Now().UTC(),
 		},
 	}
-	return r.db.Create(document).Error
+	return r.db.WithContext(ctx).Create(document).Error
 }
 
 func (r *DocumentRepositoryImpl) UpdateTitle(ctx context.Context, docID uint64, userID uint64, newTitle string) (*domain.Document, error) {
-    var doc domain.Document
+	var doc domain.Document
 
-    result := r.db.WithContext(ctx).
-        Model(&doc).
-        Clauses(clause.Returning{}). // tells Postgres to return the updated row
-        Where("id = ? AND user_id = ?", docID, userID).
-        Update("title", newTitle)
+	result := r.db.WithContext(ctx).
+		Model(&doc).
+		Clauses(clause.Returning{}). // tells Postgres to return the updated row
+		Where("id = ? AND user_id = ?", docID, userID).
+		Update("title", newTitle)
 
-    if result.Error != nil {
-        return nil, result.Error
-    }
-    if result.RowsAffected == 0 {
-        return nil, gorm.ErrRecordNotFound
-    }
-	
-    return &doc, nil
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	return &doc, nil
 }
 
 type DocumentsMeta struct {
@@ -80,12 +80,12 @@ type DocumentsMeta struct {
 	TotalPage   int   `json:"total_page"`
 }
 
-func (r *DocumentRepositoryImpl) ListDocumentByUserID(userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
+func (r *DocumentRepositoryImpl) ListDocumentByUserID(ctx context.Context, userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
 	var docs []DocumentShowResponse
 	var totalRecords int64
 
-	data := r.db.Table("documents").
-			Select(`
+	data := r.db.WithContext(ctx).Table("documents").
+		Select(`
 				documents.id,
 				documents.title,
 				documents.updated_at,
@@ -93,8 +93,8 @@ func (r *DocumentRepositoryImpl) ListDocumentByUserID(userID uint64, page, pageS
             	users.name as owner_name,
 				documents.user_id as owner_id
 			`).
-			Joins("LEFT JOIN users ON users.id = documents.user_id").
-			Where("documents.user_id = ?", userID)
+		Joins("LEFT JOIN users ON users.id = documents.user_id").
+		Where("documents.user_id = ?", userID)
 
 	// Count total records
 	if err := data.Count(&totalRecords).Error; err != nil {
@@ -103,9 +103,9 @@ func (r *DocumentRepositoryImpl) ListDocumentByUserID(userID uint64, page, pageS
 
 	offset := (page - 1) * pageSize
 	err := data.Offset(offset).
-				Limit(pageSize).
-				Order("documents.updated_at DESC").
-				Find(&docs).Error
+		Limit(pageSize).
+		Order("documents.updated_at DESC").
+		Find(&docs).Error
 	if err != nil {
 		return docs, DocumentsMeta{}, err
 	}
@@ -125,7 +125,7 @@ func (r *DocumentRepositoryImpl) ListSharedDocuments(userID uint64, page, pageSi
 	var totalRecords int64
 
 	data := r.db.Table("documents").
-			Select(`
+		Select(`
 				documents.id,
 				documents.title,
 				document_collaborators.role,
@@ -133,10 +133,10 @@ func (r *DocumentRepositoryImpl) ListSharedDocuments(userID uint64, page, pageSi
 				users.name as owner_name,
 				documents.user_id as owner_id
 			`).
-			Joins(`JOIN document_collaborators ON document_collaborators.document_id = documents.id`).
-			Joins("JOIN users ON users.id = documents.user_id").
-			Where("document_collaborators.user_id = ?", userID).
-			Where("documents.user_id != ?", userID) // except own document
+		Joins(`JOIN document_collaborators ON document_collaborators.document_id = documents.id`).
+		Joins("JOIN users ON users.id = documents.user_id").
+		Where("document_collaborators.user_id = ?", userID).
+		Where("documents.user_id != ?", userID) // except own document
 
 	// Count total records
 	if err := data.Count(&totalRecords).Error; err != nil {
@@ -145,9 +145,9 @@ func (r *DocumentRepositoryImpl) ListSharedDocuments(userID uint64, page, pageSi
 
 	offset := (page - 1) * pageSize
 	err := data.Offset(offset).
-				Limit(pageSize).
-				Order("documents.updated_at DESC").
-				Find(&docs).Error
+		Limit(pageSize).
+		Order("documents.updated_at DESC").
+		Find(&docs).Error
 	if err != nil {
 		return docs, DocumentsMeta{}, err
 	}
@@ -161,7 +161,6 @@ func (r *DocumentRepositoryImpl) ListSharedDocuments(userID uint64, page, pageSi
 		CurrentPage: page,
 	}, err
 }
-
 
 func (r *DocumentRepositoryImpl) FindByID(id uint64) (*domain.Document, error) {
 	var doc domain.Document
@@ -316,8 +315,8 @@ func (r *DocumentRepositoryImpl) ListDocumentCollaborators(ctx context.Context, 
 	return rows, err
 }
 
-func (r *DocumentRepositoryImpl) GetCollaborator(docID uint64, userID uint64, collab *domain.DocumentCollaborator) error {
-	return r.db.
+func (r *DocumentRepositoryImpl) GetCollaborator(ctx context.Context, docID uint64, userID uint64, collab *domain.DocumentCollaborator) error {
+	return r.db.WithContext(ctx).
 		Where("document_id = ? AND user_id = ?", docID, userID).
 		First(&collab).Error
 }
@@ -368,6 +367,6 @@ func (r *DocumentRepositoryImpl) DeleteDocument(ctx context.Context, docID uint6
 	return r.db.WithContext(ctx).
 		Where("id = ?", docID).
 		Delete(&domain.Document{}).Error
-		// automatically delete all the relationships
-		// gorm:"constraint:OnDelete:CASCADE"
+	// automatically delete all the relationships
+	// gorm:"constraint:OnDelete:CASCADE"
 }

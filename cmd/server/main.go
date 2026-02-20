@@ -43,12 +43,12 @@ func main() {
 	userRepo := user.NewRepository(db.AppDb)
 	docRepo := document.NewRepository(db.AppDb)
 	// Initialize service
-	userService := user.NewService(userRepo)
+	userService := user.NewService(userRepo, redisCache)
 	syncClient := sync.NewSyncClient()
-	docService := document.NewService(docRepo, userService, syncClient)
+	docService := document.NewService(docRepo, userService, syncClient, redisCache)
 	// Initialize handler
 	docHandler := document.NewHandler(docService)
-	userHandler := user.NewHandler(userService, redisCache)
+	userHandler := user.NewHandler(userService)
 	// Initialize middleware
 	authMiddleware := &middleware.Auth{
 		UserService: userService,
