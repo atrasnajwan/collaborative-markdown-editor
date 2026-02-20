@@ -12,16 +12,16 @@ import (
 type DocumentRepository interface {
 	Create(ctx context.Context, userID uint64, document *domain.Document) error
 	UpdateTitle(ctx context.Context, docID uint64, userID uint64, newTitle string) (*domain.Document, error)
-	CreateUpdate(id uint64, userID uint64, content []byte) error
+	CreateUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error
 	ListDocumentByUserID(ctx context.Context, userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
-	ListSharedDocuments(userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
-	GetUserRole(docID uint64, userID uint64) (string, error)
-	FindByID(id uint64) (*domain.Document, error)
-	CurrentSeq(docID uint64, currentSeq *uint64) error
+	ListSharedDocuments(ctx context.Context, userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
+	GetUserRole(ctx context.Context, docID uint64, userID uint64) (string, error)
+	FindByID(ctx context.Context, id uint64) (*domain.Document, error)
+	CurrentSeq(ctx context.Context, docID uint64, currentSeq *uint64) error
 	CreateSnapshot(ctx context.Context, docID uint64, state []byte) error
-	LastSnapshot(docID uint64, snapshot *domain.DocumentSnapshot) error
-	LastSnapshotSeq(docID uint64, lastSnapshotSeq *uint64) error
-	UpdatesFromSnapshot(docID uint64, snapshotSeq uint64, updates *[]domain.DocumentUpdate) error
+	LastSnapshot(ctx context.Context, docID uint64, snapshot *domain.DocumentSnapshot) error
+	LastSnapshotSeq(ctx context.Context, docID uint64, lastSnapshotSeq *uint64) error
+	UpdatesFromSnapshot(ctx context.Context, docID uint64, snapshotSeq uint64, updates *[]domain.DocumentUpdate) error
 	GetCollaborator(ctx context.Context, docID uint64, userID uint64, collab *domain.DocumentCollaborator) error
 	ListDocumentCollaborators(ctx context.Context, docID uint64) ([]collaboratorRow, error)
 	AddCollaborator(ctx context.Context, docID uint64, userID uint64, role string) error
@@ -120,11 +120,11 @@ func (r *DocumentRepositoryImpl) ListDocumentByUserID(ctx context.Context, userI
 	}, err
 }
 
-func (r *DocumentRepositoryImpl) ListSharedDocuments(userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
+func (r *DocumentRepositoryImpl) ListSharedDocuments(ctx context.Context, userID uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
 	var docs []DocumentShowResponse
 	var totalRecords int64
 
-	data := r.db.Table("documents").
+	data := r.db.WithContext(ctx).Table("documents").
 		Select(`
 				documents.id,
 				documents.title,
@@ -162,15 +162,15 @@ func (r *DocumentRepositoryImpl) ListSharedDocuments(userID uint64, page, pageSi
 	}, err
 }
 
-func (r *DocumentRepositoryImpl) FindByID(id uint64) (*domain.Document, error) {
+func (r *DocumentRepositoryImpl) FindByID(ctx context.Context, id uint64) (*domain.Document, error) {
 	var doc domain.Document
-	err := r.db.First(&doc, id).Error
+	err := r.db.WithContext(ctx).First(&doc, id).Error
 	return &doc, err
 }
 
-func (r *DocumentRepositoryImpl) GetUserRole(docID uint64, userID uint64) (string, error) {
+func (r *DocumentRepositoryImpl) GetUserRole(ctx context.Context, docID uint64, userID uint64) (string, error) {
 	var role string
-	err := r.db.Model(&domain.DocumentCollaborator{}).
+	err := r.db.WithContext(ctx).Model(&domain.DocumentCollaborator{}).
 		Where("document_id = ? AND user_id = ?", docID, userID).
 		Select("role").
 		Scan(&role).Error
@@ -181,12 +181,12 @@ func (r *DocumentRepositoryImpl) GetUserRole(docID uint64, userID uint64) (strin
 	return role, nil
 }
 
-func (r *DocumentRepositoryImpl) CreateUpdate(id uint64, userID uint64, content []byte) error {
+func (r *DocumentRepositoryImpl) CreateUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error {
 	var seq uint64
 
-	err := r.db.Transaction(func(tx *gorm.DB) error {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		now := time.Now().UTC()
-		// 1. increment sequence on document
+		// increment sequence on document
 		if err := tx.Raw(`
 			UPDATE documents
 			SET update_seq = update_seq + 1,
@@ -197,7 +197,7 @@ func (r *DocumentRepositoryImpl) CreateUpdate(id uint64, userID uint64, content 
 			return err
 		}
 
-		// 2. Insert document update with the generated seq
+		// Insert document update with the generated seq
 		if err := tx.Create(&domain.DocumentUpdate{
 			DocumentID:   id,
 			Seq:          seq,
@@ -216,7 +216,6 @@ func (r *DocumentRepositoryImpl) CreateUpdate(id uint64, userID uint64, content 
 
 func (r *DocumentRepositoryImpl) CreateSnapshot(ctx context.Context, docID uint64, state []byte) error {
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-
 		var lastSeq uint64
 
 		// Get latest update seq
@@ -246,7 +245,6 @@ func (r *DocumentRepositoryImpl) CreateSnapshot(ctx context.Context, docID uint6
 			Seq:            lastSeq,
 			SnapshotBinary: state,
 		}
-
 		if err := tx.Create(&snapshot).Error; err != nil {
 			return err
 		}
@@ -262,28 +260,28 @@ func (r *DocumentRepositoryImpl) CreateSnapshot(ctx context.Context, docID uint6
 	return err
 }
 
-func (r *DocumentRepositoryImpl) CurrentSeq(docID uint64, currentSeq *uint64) error {
-	return r.db.Model(&domain.Document{}).
+func (r *DocumentRepositoryImpl) CurrentSeq(ctx context.Context, docID uint64, currentSeq *uint64) error {
+	return r.db.WithContext(ctx).Model(&domain.Document{}).
 		Where("id = ?", docID).
 		Select("update_seq").
 		Scan(currentSeq).Error
 }
 
-func (r *DocumentRepositoryImpl) LastSnapshot(docID uint64, snapshot *domain.DocumentSnapshot) error {
-	return r.db.Where("document_id = ?", docID).
+func (r *DocumentRepositoryImpl) LastSnapshot(ctx context.Context, docID uint64, snapshot *domain.DocumentSnapshot) error {
+	return r.db.WithContext(ctx).Where("document_id = ?", docID).
 		Order("seq DESC").
 		First(&snapshot).Error
 }
 
-func (r *DocumentRepositoryImpl) LastSnapshotSeq(docID uint64, lastSnapshotSeq *uint64) error {
-	return r.db.Model(&domain.DocumentSnapshot{}).
+func (r *DocumentRepositoryImpl) LastSnapshotSeq(ctx context.Context, docID uint64, lastSnapshotSeq *uint64) error {
+	return r.db.WithContext(ctx).Model(&domain.DocumentSnapshot{}).
 		Where("document_id = ?", docID).
 		Select("COALESCE(MAX(seq), 0)").
 		Scan(lastSnapshotSeq).Error
 }
 
-func (r *DocumentRepositoryImpl) UpdatesFromSnapshot(docID uint64, snapshotSeq uint64, updates *[]domain.DocumentUpdate) error {
-	return r.db.Where("document_id = ? AND seq > ?", docID, snapshotSeq).
+func (r *DocumentRepositoryImpl) UpdatesFromSnapshot(ctx context.Context, docID uint64, snapshotSeq uint64, updates *[]domain.DocumentUpdate) error {
+	return r.db.WithContext(ctx).Where("document_id = ? AND seq > ?", docID, snapshotSeq).
 		Order("seq ASC").
 		Limit(500).
 		Find(&updates).Error

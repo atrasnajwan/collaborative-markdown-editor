@@ -5,6 +5,7 @@ import (
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
 	"collaborative-markdown-editor/redis"
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -13,7 +14,7 @@ import (
 )
 
 type UserProvider interface {
-	GetUserByID(id uint64) (*domain.User, error)
+	GetUserByID(ctx context.Context, id uint64) (*domain.User, error)
 }
 
 type Auth struct {
@@ -58,7 +59,7 @@ func (m *Auth) AuthMiddleWare() gin.HandlerFunc {
 		found, err := m.Cache.Get(ctx.Request.Context(), cacheKey, &tokenVersionDB)
 
 		if err != nil || !found {
-			user, err := m.UserService.GetUserByID(userID)
+			user, err := m.UserService.GetUserByID(ctx.Request.Context(), userID)
 			if err != nil {
 				ctx.Error(errors.Unauthorized("Invalid User ID!", err))
 				ctx.Abort()

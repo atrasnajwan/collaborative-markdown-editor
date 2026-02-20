@@ -15,13 +15,13 @@ import (
 
 // Service defines the interface for user business logic
 type Service interface {
-	Register(user *domain.User) error
+	Register(ctx context.Context, user *domain.User) error
 	UpdateUser(ctx context.Context, userID uint64, req UpdateProfileRequest) (domain.SafeUser, error)
 	ChangePassword(ctx context.Context, userID uint64, req ChangePasswordRequest) error
-	Login(email, password string) (*domain.User, error)
+	Login(ctx context.Context, email, password string) (*domain.User, error)
 	Logout(ctx context.Context, userID uint64)
-	GetUserByID(id uint64) (*domain.User, error)
-	DeactivateUser(id uint64) error
+	GetUserByID(ctx context.Context, id uint64) (*domain.User, error)
+	DeactivateUser(ctx context.Context,id uint64) error
 	SearchUsers(ctx context.Context, query string) ([]domain.SafeUser, error)
 }
 
@@ -37,9 +37,9 @@ func NewService(repository UserRepository, cache *redis.Cache) Service {
 }
 
 // Register registers a new user
-func (s *DefaultService) Register(user *domain.User) error {
+func (s *DefaultService) Register(ctx context.Context, user *domain.User) error {
 	// Check if user with email already exists
-	_, err := s.repository.FindByEmail(user.Email)
+	_, err := s.repository.FindByEmail(ctx, user.Email)
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return err
 	}
@@ -56,7 +56,7 @@ func (s *DefaultService) Register(user *domain.User) error {
 	user.IsActive = true
 
 	// Create user
-	return s.repository.Create(user)
+	return s.repository.Create(ctx, user)
 }
 
 func (s *DefaultService) UpdateUser(ctx context.Context, userID uint64, req UpdateProfileRequest) (domain.SafeUser, error) {
@@ -83,7 +83,7 @@ func (s *DefaultService) UpdateUser(ctx context.Context, userID uint64, req Upda
 }
 
 func (s *DefaultService) ChangePassword(ctx context.Context, userID uint64, req ChangePasswordRequest) error {
-    user, _ := s.repository.FindByID(userID)
+    user, _ := s.repository.FindByID(ctx, userID)
     
     // Verify old password
     if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.CurrentPassword)); err != nil {
@@ -105,9 +105,9 @@ func (s *DefaultService) ChangePassword(ctx context.Context, userID uint64, req 
 }
 
 // Login authenticates a user
-func (s *DefaultService) Login(email, password string) (*domain.User, error) {
+func (s *DefaultService) Login(ctx context.Context, email, password string) (*domain.User, error) {
 	// Find user by email
-	user, err := s.repository.FindByEmail(email)
+	user, err := s.repository.FindByEmail(ctx, email)
 	if err != nil {
 		return nil, errors.Unauthorized("User not found!", err)
 	}
@@ -126,7 +126,7 @@ func (s *DefaultService) Login(email, password string) (*domain.User, error) {
 }
 
 func (s *DefaultService) Logout(ctx context.Context, userID uint64) {
-	err := s.repository.UpdateTokenVersion(userID)
+	err := s.repository.UpdateTokenVersion(ctx, userID)
 	if err != nil {
 		log.Printf("%v\n", err.Error())
 	}
@@ -136,13 +136,13 @@ func (s *DefaultService) Logout(ctx context.Context, userID uint64) {
 }
 
 // GetUserByID gets a user by ID
-func (s *DefaultService) GetUserByID(id uint64) (*domain.User, error) {
-	return s.repository.FindByID(id)
+func (s *DefaultService) GetUserByID(ctx context.Context, id uint64) (*domain.User, error) {
+	return s.repository.FindByID(ctx, id)
 }
 
 // DeactivateUser deactivates a user
-func (s *DefaultService) DeactivateUser(id uint64) error {
-	return s.repository.Deactivate(id)
+func (s *DefaultService) DeactivateUser(ctx context.Context, id uint64) error {
+	return s.repository.Deactivate(ctx, id)
 }
 
 func (s *DefaultService) SearchUsers(ctx context.Context, query string) ([]domain.SafeUser, error) {

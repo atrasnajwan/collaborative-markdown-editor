@@ -11,12 +11,12 @@ import (
 
 // UserRepository defines the interface for user data access
 type UserRepository interface {
-	Create(user *domain.User) error
+	Create(ctx context.Context, user *domain.User) error
 	UpdateFields(ctx context.Context, userID uint64, updates map[string]interface{}) (*domain.User, error)
-	FindByEmail(email string) (*domain.User, error)
-	FindByID(id uint64) (*domain.User, error)
-	Deactivate(id uint64) error
-	UpdateTokenVersion(id uint64) error 
+	FindByEmail(ctx context.Context, email string) (*domain.User, error)
+	FindByID(ctx context.Context, id uint64) (*domain.User, error)
+	Deactivate(ctx context.Context, id uint64) error
+	UpdateTokenVersion(ctx context.Context, id uint64) error 
 	SearchUsers(ctx context.Context, query string, limit int) ([]domain.User, error) 
 }
 
@@ -31,8 +31,8 @@ func NewRepository(db *gorm.DB) UserRepository {
 }
 
 // Create creates a new user
-func (r *UserRepositoryImpl) Create(user *domain.User) error {
-	return r.db.Create(user).Error
+func (r *UserRepositoryImpl) Create(ctx context.Context, user *domain.User) error {
+	return r.db.WithContext(ctx).Create(user).Error
 }
 
 func (r *UserRepositoryImpl) UpdateFields(ctx context.Context, userID uint64, updates map[string]interface{}) (*domain.User, error) {
@@ -55,9 +55,10 @@ func (r *UserRepositoryImpl) UpdateFields(ctx context.Context, userID uint64, up
 }
 
 // FindByEmail finds a user by email
-func (r *UserRepositoryImpl) FindByEmail(email string) (*domain.User, error) {
+func (r *UserRepositoryImpl) FindByEmail(ctx context.Context, email string) (*domain.User, error) {
 	var user domain.User
-	err := r.db.Where("email = ?", email).First(&user).Error
+
+	err := r.db.WithContext(ctx).Where("email = ?", email).First(&user).Error
 	if err != nil {
 		return nil, err
 	}
@@ -65,25 +66,25 @@ func (r *UserRepositoryImpl) FindByEmail(email string) (*domain.User, error) {
 }
 
 // FindByID finds a user by ID
-func (r *UserRepositoryImpl) FindByID(id uint64) (*domain.User, error) {
+func (r *UserRepositoryImpl) FindByID(ctx context.Context, id uint64) (*domain.User, error) {
 	var user domain.User
-	err := r.db.First(&user, id).Error
+	err := r.db.WithContext(ctx).First(&user, id).Error
 	return &user, err
 }
 
 // Deactivate deactivates a user
-func (r *UserRepositoryImpl) Deactivate(id uint64) error {
-	user, err := r.FindByID(id)
+func (r *UserRepositoryImpl) Deactivate(ctx context.Context, id uint64) error {
+	user, err := r.FindByID(ctx, id)
 	if err != nil {
 		return err
 	}
 
 	user.IsActive = false
-	return r.db.Save(user).Error
+	return r.db.WithContext(ctx).Save(user).Error
 }
 
-func (r *UserRepositoryImpl) UpdateTokenVersion(id uint64) error {
-	return r.db.Model(&domain.User{}).
+func (r *UserRepositoryImpl) UpdateTokenVersion(ctx context.Context, id uint64) error {
+	return r.db.WithContext(ctx).Model(&domain.User{}).
 		Where("id = ?", id).
 		Update("token_version", gorm.Expr("token_version + 1")).Error
 }

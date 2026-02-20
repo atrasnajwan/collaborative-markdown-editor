@@ -48,7 +48,7 @@ func (h *Handler) Register(c *gin.Context) {
 		IsActive: true,
 	}
 
-	if err := h.service.Register(user); err != nil {
+	if err := h.service.Register(c.Request.Context(), user); err != nil {
 		c.Error(err)
 		return
 	}
@@ -110,7 +110,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	user, err := h.service.Login(form.Email, form.Password)
+	user, err := h.service.Login(c.Request.Context(), form.Email, form.Password)
 	if err != nil {
 		c.Error(err)
 		return
@@ -163,7 +163,7 @@ func (h *Handler) RefreshToken(c *gin.Context) {
 		return
 	}
 
-	user, err := h.service.GetUserByID(userID)
+	user, err := h.service.GetUserByID(c.Request.Context(), userID)
 	if err != nil {
 		c.Error(errors.UnprocessableEntity("User not found!", err))
 		return
@@ -202,7 +202,7 @@ func (h *Handler) Logout(c *gin.Context) {
 // GetProfile handles getting the current user's profile
 func (h *Handler) GetProfile(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	user, err := h.service.GetUserByID(userID.(uint64))
+	user, err := h.service.GetUserByID(c.Request.Context(), userID.(uint64))
 	if err != nil {
 		c.Error(err)
 		return

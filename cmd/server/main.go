@@ -45,7 +45,7 @@ func main() {
 	// Initialize service
 	userService := user.NewService(userRepo, redisCache)
 	syncClient := sync.NewSyncClient()
-	docService := document.NewService(docRepo, userService, syncClient, redisCache)
+	docService := document.NewService(docRepo, userService, syncClient, redisCache, uint64(config.AppConfig.DocumentSnapshotThreshold))
 	// Initialize handler
 	docHandler := document.NewHandler(docService)
 	userHandler := user.NewHandler(userService)

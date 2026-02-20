@@ -87,7 +87,7 @@ func (h *Handler) ShowSharedDocuments(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
 	page, pageSize := utils.GetPaginationParams(c)
-	docs, meta, err := h.service.GetSharedDocuments(userID.(uint64), page, pageSize)
+	docs, meta, err := h.service.GetSharedDocuments(c.Request.Context(), userID.(uint64), page, pageSize)
 	if err != nil {
 		c.Error(err)
 		return
@@ -106,7 +106,7 @@ func (h *Handler) ShowDocument(c *gin.Context) {
 	
 	userID, _ := c.Get("user_id")
 
-	doc, err := h.service.GetDocumentByID(docIDUint, userID.(uint64))
+	doc, err := h.service.GetDocumentByID(c.Request.Context(), docIDUint, userID.(uint64))
 	if err != nil {
 		c.Error(err)
 		return
@@ -130,7 +130,7 @@ func (h *Handler) ShowUserRole(c *gin.Context) {
 		return
 	}
 
-	role, err := h.service.FetchUserRole(docIDUint, userIDUint)
+	role, err := h.service.FetchUserRole(c.Request.Context(), docIDUint, userIDUint)
 	if err != nil {
 		c.Error(err)
 		return
@@ -147,7 +147,7 @@ func (h *Handler) ShowDocumentState(c *gin.Context) {
 		return
 	}
 	
-	doc, err := h.service.GetDocumentState(uint64(docIDUint))
+	doc, err := h.service.GetDocumentState(c.Request.Context(), uint64(docIDUint))
 	if err != nil {
 		c.Error(err)
 		return

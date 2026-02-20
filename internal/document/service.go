@@ -19,11 +19,11 @@ type Service interface {
 	RenameDocument(ctx context.Context, docID uint64, userID uint64, title string) (*domain.Document, error)
 	CreateDocumentUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error
 	GetUserDocuments(ctx context.Context, userID uint64, page, pageSize int) (*PaginatedDocuments, error)
-	GetSharedDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
-	GetDocumentByID(docID uint64, userID uint64) (*DocumentShowResponse, error)
-	GetDocumentState(docID uint64) (*DocumentStateResponse, error)
+	GetSharedDocuments(ctx context.Context, userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
+	GetDocumentByID(ctx context.Context, docID uint64, userID uint64) (*DocumentShowResponse, error)
+	GetDocumentState(ctx context.Context, docID uint64) (*DocumentStateResponse, error)
 	CreateDocumentSnapshot(ctx context.Context, docID uint64, state []byte) error
-	FetchUserRole(docID, userID uint64) (string, error)
+	FetchUserRole(ctx context.Context, docID, userID uint64) (string, error)
 	ListCollaborators(ctx context.Context, docID uint64, requesterID uint64) ([]DocumentCollaboratorDTO, error)
 	AddCollaborator(ctx context.Context, docID uint64, requesterID uint64, targetUserID uint64, role string) (*DocumentCollaboratorDTO, error)
 	ChangeCollaboratorRole(ctx context.Context, docID uint64, requesterID uint64, targetUserID uint64, newRole string) (*DocumentCollaboratorDTO, error)
@@ -32,7 +32,7 @@ type Service interface {
 }
 
 type UserProvider interface {
-	GetUserByID(id uint64) (*domain.User, error)
+	GetUserByID(ctx context.Context, id uint64) (*domain.User, error)
 }
 
 type DefaultService struct {
@@ -40,14 +40,22 @@ type DefaultService struct {
 	syncClient   *sync.SyncClient
 	userProvider UserProvider
 	cache *redis.Cache
+	snapshotThreshold uint64
 }
 
-func NewService(repository DocumentRepository, userProvider UserProvider, syncClient *sync.SyncClient, cache *redis.Cache) Service {
+func NewService(
+	repository DocumentRepository,
+	userProvider UserProvider,
+	syncClient *sync.SyncClient,
+	cache *redis.Cache,
+	snapshotThreshold uint64,
+) Service {
 	return &DefaultService{
 		repository:   repository,
 		syncClient:   syncClient,
 		userProvider: userProvider,
 		cache: cache,
+		snapshotThreshold: snapshotThreshold,
 	}
 }
 
@@ -111,8 +119,8 @@ func (s *DefaultService) GetUserDocuments(ctx context.Context, userID uint64, pa
 	return &result, nil
 }
 
-func (s *DefaultService) GetSharedDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
-	documents, meta, err := s.repository.ListSharedDocuments(userId, page, pageSize)
+func (s *DefaultService) GetSharedDocuments(ctx context.Context, userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
+	documents, meta, err := s.repository.ListSharedDocuments(ctx, userId, page, pageSize)
 
 	if err != nil {
 		return []DocumentShowResponse{}, DocumentsMeta{}, err
@@ -132,14 +140,14 @@ type DocumentShowResponse struct {
 	OwnerId   uint64	`json:"owner_id"`
 }
 
-func (s *DefaultService) GetDocumentByID(docID uint64, userID uint64) (*DocumentShowResponse, error) {
-	doc, err := s.repository.FindByID(docID)
+func (s *DefaultService) GetDocumentByID(ctx context.Context, docID uint64, userID uint64) (*DocumentShowResponse, error) {
+	doc, err := s.repository.FindByID(ctx, docID)
 	if err != nil {
 		return nil, err
 	}
 
 	var role string
-	role, err = s.repository.GetUserRole(docID, userID)
+	role, err = s.repository.GetUserRole(ctx, docID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -153,14 +161,14 @@ func (s *DefaultService) GetDocumentByID(docID uint64, userID uint64) (*Document
 	}, nil
 }
 
-func (s *DefaultService) FetchUserRole(docID, userID uint64) (string, error) {
-	return s.repository.GetUserRole(docID, userID)
+func (s *DefaultService) FetchUserRole(ctx context.Context, docID, userID uint64) (string, error) {
+	return s.repository.GetUserRole(ctx, docID, userID)
 }
 
 // context to detect if connection is safe, and cancel downstream if fail
 func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, docID uint64, userID uint64, content []byte) error {
 	// viewer not allowed to
-	role, err := s.FetchUserRole(docID, userID)
+	role, err := s.FetchUserRole(ctx, docID, userID)
 	if err != nil {
 		return err
 	}
@@ -168,12 +176,12 @@ func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, docID uint64,
 		return errors.Forbidden("Viewer can't create update!", nil)
 	}
 
-	err = s.repository.CreateUpdate(docID, userID, content)
+	err = s.repository.CreateUpdate(ctx, docID, userID, content)
 	if err != nil {
 		return err
 	}
 
-	if s.shouldSnapshot(docID) {
+	if s.shouldSnapshot(ctx, docID) {
 		state, err := s.syncClient.FetchDocumentState(ctx, docID)
 		if err != nil {
 			return err
@@ -193,23 +201,21 @@ func (s *DefaultService) CreateDocumentSnapshot(ctx context.Context, docID uint6
 	return s.repository.CreateSnapshot(ctx, docID, state)
 }
 
-func (s *DefaultService) shouldSnapshot(docID uint64) bool {
-	const snapshotEvery = 200
-
+func (s *DefaultService) shouldSnapshot(ctx context.Context, docID uint64) bool {
 	var lastSnapshotSeq uint64
 	var currentSeq uint64
 
-	err := s.repository.LastSnapshotSeq(docID, &lastSnapshotSeq)
+	err := s.repository.LastSnapshotSeq(ctx, docID, &lastSnapshotSeq)
 	if err != nil {
 		return false
 	}
 
-	err = s.repository.CurrentSeq(docID, &currentSeq)
+	err = s.repository.CurrentSeq(ctx, docID, &currentSeq)
 	if err != nil {
 		return false
 	}
 
-	return currentSeq-lastSnapshotSeq >= snapshotEvery
+	return currentSeq-lastSnapshotSeq >= s.snapshotThreshold
 }
 
 type DocumentUpdateDTO struct {
@@ -223,10 +229,10 @@ type DocumentStateResponse struct {
 	Updates     []DocumentUpdateDTO `json:"updates"`
 }
 
-func (s *DefaultService) GetDocumentState(docID uint64) (*DocumentStateResponse, error) {
+func (s *DefaultService) GetDocumentState(ctx context.Context, docID uint64) (*DocumentStateResponse, error) {
 
 	var snapshot domain.DocumentSnapshot
-	err := s.repository.LastSnapshot(docID, &snapshot)
+	err := s.repository.LastSnapshot(ctx, docID, &snapshot)
 
 	var snapshotSeq uint64
 	var snapshotState []byte
@@ -237,7 +243,7 @@ func (s *DefaultService) GetDocumentState(docID uint64) (*DocumentStateResponse,
 	}
 
 	var updates []domain.DocumentUpdate
-	err = s.repository.UpdatesFromSnapshot(docID, snapshotSeq, &updates)
+	err = s.repository.UpdatesFromSnapshot(ctx, docID, snapshotSeq, &updates)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +286,7 @@ func (s *DefaultService) ListCollaborators(ctx context.Context, docID uint64, re
 	}
 
 	// viewer not allowed to
-	role, err := s.FetchUserRole(docID, requesterID)
+	role, err := s.FetchUserRole(ctx, docID, requesterID)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +318,7 @@ func (s *DefaultService) AddCollaborator(
 	role string,
 ) (*DocumentCollaboratorDTO, error) {
 	// only owner can add
-	requesterRole, err := s.repository.GetUserRole(docID, requesterID)
+	requesterRole, err := s.repository.GetUserRole(ctx, docID, requesterID)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +332,7 @@ func (s *DefaultService) AddCollaborator(
 	}
 
 	// Ensure target user exists
-	user, err := s.userProvider.GetUserByID(targetUserID)
+	user, err := s.userProvider.GetUserByID(ctx, targetUserID)
 	if err != nil {
 		return nil, errors.UnprocessableEntity("Can't find user!", nil)
 	}
@@ -351,13 +357,13 @@ func (s *DefaultService) AddCollaborator(
 
 func (s *DefaultService) ChangeCollaboratorRole(
 	ctx context.Context,
-	docID uint64,
-	requesterID uint64,
+	docID,
+	requesterID,
 	targetUserID uint64,
 	newRole string,
 ) (*DocumentCollaboratorDTO, error) {
 	// must be owner
-	requesterRole, err := s.repository.GetUserRole(docID, requesterID)
+	requesterRole, err := s.repository.GetUserRole(ctx, docID, requesterID)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +378,7 @@ func (s *DefaultService) ChangeCollaboratorRole(
 	}
 
 	// Ensure target collaborator exists
-	currentRole, err := s.repository.GetUserRole(docID, targetUserID)
+	currentRole, err := s.repository.GetUserRole(ctx, docID, targetUserID)
 	if err != nil {
 		return nil, errors.UnprocessableEntity("Can't find user!", err)
 	}
@@ -391,21 +397,28 @@ func (s *DefaultService) ChangeCollaboratorRole(
 		return nil, err
 	}
 
-	user, err := s.userProvider.GetUserByID(targetUserID)
+	user, err := s.userProvider.GetUserByID(ctx, targetUserID)
 	if err != nil {
 		return nil, err
 	}
 
 	// send update to sync-server
-	err = s.syncClient.UpdateUserPermission(
-		ctx,
-		docID,
-		targetUserID,
-		newRole,
-	)
-	if err != nil {
-		log.Printf("failed to notify sync server: %v", err)
-	}
+	go func(dID, uID uint64, role string) {
+		// context with 5s timeout
+        bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+
+		err = s.syncClient.UpdateUserPermission(
+			bgCtx,
+			dID,
+			uID,
+			role,
+		)
+		if err != nil {
+			log.Printf("[SYNC SERVER ERROR] Failed to notify user %d role in doc %d is changed to %v! %v", uID, dID, role, err)
+		}
+
+	}(docID, targetUserID, newRole)
 	
 	return &DocumentCollaboratorDTO{
 		User: UserDTO{
@@ -424,7 +437,7 @@ func (s *DefaultService) RemoveCollaborator(
 	targetUserID uint64,
 ) error {
 	// must be owner
-	requesterRole, err := s.repository.GetUserRole(docID, requesterID)
+	requesterRole, err := s.repository.GetUserRole(ctx, docID, requesterID)
 	if err != nil {
 		return err
 	}
@@ -438,7 +451,7 @@ func (s *DefaultService) RemoveCollaborator(
 	}
 
 	// Ensure target exists
-	if _, err := s.repository.GetUserRole(docID, targetUserID); err != nil {
+	if _, err := s.repository.GetUserRole(ctx, docID, targetUserID); err != nil {
 		return errors.UnprocessableEntity("Can't find user", err)
 	}
 
@@ -447,15 +460,21 @@ func (s *DefaultService) RemoveCollaborator(
 	}
 
 	// send update to sync-server
-	err = s.syncClient.UpdateUserPermission(
-		ctx,
-		docID,
-		targetUserID,
-		"none",
-	)
-	if err != nil {
-		log.Printf("failed to notify sync server: %v", err)
-	}
+	go func(dID, uID uint64) {
+		// context with 5s timeout
+        bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+
+		err = s.syncClient.UpdateUserPermission(
+			bgCtx,
+			dID,
+			uID,
+			"none",
+		)
+		if err != nil {
+			log.Printf("[SYNC SERVER ERROR] Failed to notify user %d role in doc %d is removed! %v", uID, dID, err)
+		}
+	}(docID, targetUserID)
 
 	return nil
 }
@@ -488,7 +507,7 @@ func (s *DefaultService) DeleteDocument(ctx context.Context, docID uint64, userI
 		
 		err := s.syncClient.RemoveDocument(
 			bgCtx,
-			docID,
+			id,
 		)
 		if err != nil {
 			log.Printf("[SYNC SERVER ERROR] Failed to notify doc %d is deleted! %v", id, err)

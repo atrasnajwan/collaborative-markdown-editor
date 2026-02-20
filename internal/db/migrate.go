@@ -3,7 +3,9 @@ package db
 import (
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/user"
+	"context"
 	"log"
+	"time"
 )
 
 // Migrate runs database migrations
@@ -49,12 +51,16 @@ func SeedData() {
 		IsActive: true,
 	}
 
+	// 1 minute to finish seeding
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+    defer cancel()
+
 	// Check if user exists
-	_, err := userRepo.FindByEmail(testUser.Email)
+	_, err := userRepo.FindByEmail(ctx, testUser.Email)
 	if err != nil {
 		userService := user.NewService(userRepo, nil)
 		// User doesn't exist, create it
-		if err := userService.Register(testUser); err != nil {
+		if err := userService.Register(ctx, testUser); err != nil {
 			log.Printf("Error creating test user: %v", err)
 		} else {
 			log.Printf("Created test user: %s", testUser.Email)
