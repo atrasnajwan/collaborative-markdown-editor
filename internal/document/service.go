@@ -19,7 +19,7 @@ type Service interface {
 	RenameDocument(ctx context.Context, docID uint64, userID uint64, title string) (*domain.Document, error)
 	CreateDocumentUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error
 	GetUserDocuments(ctx context.Context, userID uint64, page, pageSize int) (*PaginatedDocuments, error)
-	GetSharedDocuments(ctx context.Context, userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error)
+	GetSharedDocuments(ctx context.Context, userId uint64, page, pageSize int) (*PaginatedDocuments, error)
 	GetDocumentByID(ctx context.Context, docID uint64, userID uint64) (*DocumentShowResponse, error)
 	GetDocumentState(ctx context.Context, docID uint64) (*DocumentStateResponse, error)
 	CreateDocumentSnapshot(ctx context.Context, docID uint64, state []byte) error
@@ -82,9 +82,20 @@ func (s *DefaultService) RenameDocument(ctx context.Context, docID uint64, userI
         }
         return nil, err
     }
-	// increase cache key, so any new fetch will get new version
-    versionKey := fmt.Sprintf("user:%d:docs:version", userID)
-    s.cache.IncrementVersion(ctx, versionKey)
+
+	collaborators, _ := s.repository.ListDocumentCollaborators(ctx, docID)
+	// Invalidate cache
+    for _, col := range collaborators {
+		if col.Role == "owner" {
+			// invalidate for owner
+			versionKey := fmt.Sprintf("user:%d:docs:version", userID)
+			s.cache.IncrementVersion(ctx, versionKey)
+		} else {
+			// shared document
+			sharedVersionKey := fmt.Sprintf("user:%d:docs:shared:version", col.UserID)
+			s.cache.IncrementVersion(ctx, sharedVersionKey)
+		}
+    }
 
     return doc, nil
 }
@@ -119,14 +130,30 @@ func (s *DefaultService) GetUserDocuments(ctx context.Context, userID uint64, pa
 	return &result, nil
 }
 
-func (s *DefaultService) GetSharedDocuments(ctx context.Context, userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
-	documents, meta, err := s.repository.ListSharedDocuments(ctx, userId, page, pageSize)
+func (s *DefaultService) GetSharedDocuments(ctx context.Context, userID uint64, page, pageSize int) (*PaginatedDocuments, error) {
+	// Get the current data version for this user shared documents
+    versionKey := fmt.Sprintf("user:%d:docs:shared:version", userID)
+    v := s.cache.GetVersion(ctx, versionKey)
+
+	cacheKey := fmt.Sprintf("docs:shared:u:%d:v:%d:p:%d:ps:%d", userID, v, page, pageSize)
+
+	var result PaginatedDocuments
+	// get data from cache
+    found, _ := s.cache.Get(ctx, cacheKey, &result)
+    if found {
+        return &result, nil
+    }
+
+	documents, meta, err := s.repository.ListSharedDocuments(ctx, userID, page, pageSize)
 
 	if err != nil {
-		return []DocumentShowResponse{}, DocumentsMeta{}, err
+		return nil, err
 	}
+	result = PaginatedDocuments{Data: documents, Meta: meta}
+	// set value to cache
+	go s.cache.Set(context.Background(), cacheKey, result, 24*time.Hour)
 
-	return documents, meta, nil
+	return &result, nil
 }
 
 
@@ -344,6 +371,10 @@ func (s *DefaultService) AddCollaborator(
 		return nil, err
 	}
 
+	// invalidate cache
+	versionKey := fmt.Sprintf("user:%d:docs:shared:version", targetUserID)
+    s.cache.IncrementVersion(ctx, versionKey)
+
 	// 5. Response DTO
 	return &DocumentCollaboratorDTO{
 		User: UserDTO{
@@ -396,11 +427,10 @@ func (s *DefaultService) ChangeCollaboratorRole(
 	); err != nil {
 		return nil, err
 	}
-
-	user, err := s.userProvider.GetUserByID(ctx, targetUserID)
-	if err != nil {
-		return nil, err
-	}
+	
+	// invalidate cache
+	versionKey := fmt.Sprintf("user:%d:docs:shared:version", targetUserID)
+    s.cache.IncrementVersion(ctx, versionKey)
 
 	// send update to sync-server
 	go func(dID, uID uint64, role string) {
@@ -417,11 +447,16 @@ func (s *DefaultService) ChangeCollaboratorRole(
 		if err != nil {
 			log.Printf("[SYNC SERVER ERROR] Failed to notify user %d role in doc %d is changed to %v! %v", uID, dID, role, err)
 		}
-
+		
 	}(docID, targetUserID, newRole)
+		
+	user, err := s.userProvider.GetUserByID(ctx, targetUserID)
+	if err != nil {
+		return nil, err
+	}
 	
 	return &DocumentCollaboratorDTO{
-		User: UserDTO{
+			User: UserDTO{
 			ID:    user.ID,
 			Name:  user.Name,
 			Email: user.Email,
@@ -459,6 +494,10 @@ func (s *DefaultService) RemoveCollaborator(
 		return err
 	}
 
+	// invalidate cache
+	versionKey := fmt.Sprintf("user:%d:docs:shared:version", targetUserID)
+    s.cache.IncrementVersion(ctx, versionKey)
+
 	// send update to sync-server
 	go func(dID, uID uint64) {
 		// context with 5s timeout
@@ -491,13 +530,25 @@ func (s *DefaultService) DeleteDocument(ctx context.Context, docID uint64, userI
 		return errors.Forbidden("Only owner can delete document", nil)
 	}
 
+	collaborators, _ := s.repository.ListDocumentCollaborators(ctx, docID)
 	err = s.repository.DeleteDocument(ctx, docID)
 	if err != nil {
 		return err
 	}
-	// increase cache key, so any new fetch will get new version
-    versionKey := fmt.Sprintf("user:%d:docs:version", userID)
-    s.cache.IncrementVersion(ctx, versionKey)
+
+	// Invalidate cache
+    for _, col := range collaborators {
+		if col.Role == "owner" {
+			// invalidate for owner
+			versionKey := fmt.Sprintf("user:%d:docs:version", userID)
+			s.cache.IncrementVersion(ctx, versionKey)
+		} else {
+			// shared document
+			sharedVersionKey := fmt.Sprintf("user:%d:docs:shared:version", col.UserID)
+			s.cache.IncrementVersion(ctx, sharedVersionKey)
+		}
+    }
+
 	
 	// send update to sync-server
 	go func(id uint64) {

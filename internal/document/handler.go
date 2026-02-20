@@ -87,13 +87,13 @@ func (h *Handler) ShowSharedDocuments(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
 	page, pageSize := utils.GetPaginationParams(c)
-	docs, meta, err := h.service.GetSharedDocuments(c.Request.Context(), userID.(uint64), page, pageSize)
+	result, err := h.service.GetSharedDocuments(c.Request.Context(), userID.(uint64), page, pageSize)
 	if err != nil {
 		c.Error(err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": docs, "meta": meta})
+	c.JSON(http.StatusOK, result)
 }
 
 func (h *Handler) ShowDocument(c *gin.Context) {
