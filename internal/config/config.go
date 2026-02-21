@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
-
+	
 	"github.com/joho/godotenv"
 )
 
@@ -14,7 +14,8 @@ type Config struct {
 	// Server configuration
 	ServerPort  string
 	Environment string
-
+	WorkerPollSize int
+	
 	// Database configuration
 	DBHost     string
 	DBPort     string
@@ -39,8 +40,6 @@ type Config struct {
 	FrontendAddress string
 
 	DocumentSnapshotThreshold int
-
-	WorkerPollSize int
 }
 
 // Global application configuration

@@ -1,16 +1,21 @@
 # Collaborative Markdown Editor
 
-A real-time collaborative markdown editor backend built with Go, featuring document synchronization, user management, and multi-user collaboration capabilities.
+A real-time collaborative markdown editor backend built with Go. It provides auth, document CRUD, storage of encoded Yjs updates, and Y.Doc state hydration for an external sync server.
 
-## Features
+## Responsibilities
 
-- **User Management**: Registration, authentication, and profile management with JWT tokens
-- **Document Management**: Create, read, update, and delete documents with ownership and sharing
-- **Real-time Collaboration**: Multi-user editing with document updates and snapshots
-- **Role-based Access Control**: Owner, editor, and viewer roles for document collaborators
-- **User Search**: Search for users to add as collaborators
-- **Document Sync**: Integration with external sync server for real-time updates
-- **Redis Caching**: Optional cache/connection helper (see [redis/redis.go](redis/redis.go))
+- **Auth** — Registration, login, JWT (access + refresh), profile and password management, user search for collaboration.
+- **Document CRUD** — Create, read, update, and delete documents; ownership and sharing; role-based access (owner, editor, viewer).
+- **Store encoded Yjs updates** — Persist CRDT updates and snapshots as binary; sequence numbers for ordering.
+- **Hydrate Y.Doc state** — Serve full document state (snapshot + updates) so clients or the sync server can reconstruct `Y.Doc` from storage.
+
+## Design Decisions
+
+- **CRDT updates stored as binary** — Yjs updates and snapshots are stored as raw binary (e.g. `bytea`), not decoded or re-encoded. This keeps the backend simple and avoids interpreting CRDT structure.
+- **Idempotent hydration** — Replaying the same snapshot and ordered updates always yields the same `Y.Doc` state. Sequence numbers and append-only updates make hydration deterministic and safe to retry.
+- **Stateless HTTP layer** — No server-held document state or WebSocket handling here. HTTP handlers are stateless; real-time sync is delegated to an external sync server that uses this service for persistence and state fetch.
+
+---
 
 ## Tech Stack
 
@@ -25,13 +30,12 @@ A real-time collaborative markdown editor backend built with Go, featuring docum
 
 ```
 .
-├── auth/                    # Authentication & JWT handling
-│   ├── jwt.go              # JWT token generation and verification
-│   └── middleware.go       # Authentication middleware
 ├── cmd/
 │   └── server/
 │       └── main.go         # Application entry point
 ├── internal/
+|   ├── auth/            
+│   |   └── jwt.go              # JWT token generation and verification
 │   ├── config/
 │   │   └── config.go       # Configuration management
 │   ├── db/
@@ -45,8 +49,9 @@ A real-time collaborative markdown editor backend built with Go, featuring docum
 │   ├── domain/             # Domain models
 │   │   ├── document.go
 │   │   └── user.go
-│   ├── errors/             # Error handling
-│   │   └── errors.go
+│   ├── middleware/
+|   |   |── auth.go         # Authentication middleware
+│   │   └── error_handler.go # Error handling
 │   ├── sync/               # External sync server client
 │   │   └── client.go
 │   └── user/               # User domain
@@ -68,8 +73,8 @@ POST /register
 Content-Type: application/json
 
 {
-  "name": "John Doe",
-  "email": "john@example.com",
+  "name": "Atras Najwan",
+  "email": "atras@example.com",
   "password": "password123"
 }
 ```
@@ -80,7 +85,7 @@ POST /login
 Content-Type: application/json
 
 {
-  "email": "john@example.com",
+  "email": "atras@example.com",
   "password": "password123"
 }
 
@@ -95,6 +100,50 @@ Response:
 ```
 GET /profile
 Authorization: Bearer <jwt_token>
+
+Response:
+{
+  "id": 1,
+  "name": "Atras Najwan",
+  "email": "atras@example.com",
+  "is_active": true,
+  "created_at": "2026-02-21T10:00:00Z"
+}
+```
+
+#### Update Profile
+```
+PATCH /profile
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+{
+  "name": "John Updated",
+  "email": "john.new@example.com"
+}
+```
+
+#### Change Password
+```
+POST /change-password
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+{
+  "current_password": "oldpassword123",
+  "new_password": "newpassword123"
+}
+```
+
+#### Refresh Token
+```
+POST /refresh
+Cookie: refresh_token=<refresh_token>
+
+Response:
+{
+  "access_token": "new_jwt_token_here"
+}
 ```
 
 #### Logout
@@ -107,6 +156,15 @@ Authorization: Bearer <jwt_token>
 ```
 GET /users?q=john
 Authorization: Bearer <jwt_token>
+
+Response:
+[
+  {
+    "id": 2,
+    "name": "John Smith",
+    "email": "john.smith@example.com"
+  }
+]
 ```
 
 ### Document Routes
@@ -118,7 +176,28 @@ Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
 {
-  "Title": "My Document"
+  "title": "My Document"
+}
+
+Response:
+{
+  "id": 1,
+  "title": "My Document",
+  "user_id": 1,
+  "update_seq": 0,
+  "created_at": "2026-02-21T10:00:00Z",
+  "updated_at": "2026-02-21T10:00:00Z"
+}
+```
+
+#### Rename Document
+```
+PATCH /documents/:id
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+{
+  "title": "Updated Document Title"
 }
 ```
 
@@ -126,24 +205,112 @@ Content-Type: application/json
 ```
 GET /documents?page=1&per_page=10
 Authorization: Bearer <jwt_token>
+
+Response:
+{
+  "data": [
+    {
+      "id": 1,
+      "title": "My Document",
+      "role": "owner",
+      "created_at": "2026-02-21T10:00:00Z",
+      "updated_at": "2026-02-21T10:00:00Z"
+    }
+  ],
+  "meta": {
+    "current_page": 1,
+    "total_page": 1,
+    "total": 1,
+    "per_page": 10
+  }
+}
 ```
 
 #### List Shared Documents
 ```
 GET /documents/shared?page=1&per_page=10
 Authorization: Bearer <jwt_token>
+
+Response:
+{
+  "data": [
+    {
+      "id": 2,
+      "title": "Shared Document",
+      "role": "editor",
+      "created_at": "2026-02-21T10:00:00Z",
+      "updated_at": "2026-02-21T10:00:00Z"
+    }
+  ],
+  "meta": {
+    "current_page": 1,
+    "total_page": 1,
+    "total": 1,
+    "per_page": 10
+  }
+}
 ```
 
 #### Get Document
 ```
 GET /documents/:id
 Authorization: Bearer <jwt_token>
+
+Response:
+{
+  "id": 1,
+  "title": "My Document",
+  "role": "owner",
+  "created_at": "2026-02-21T10:00:00Z",
+  "updated_at": "2026-02-21T10:00:00Z"
+}
+```
+
+#### Get Document State
+```
+GET /documents/:id/state
+Authorization: Bearer <jwt_token>
+
+Response:
+{
+  "snapshot": "<binary_data>",
+  "snapshot_seq": 100,
+  "updates": [
+    {
+      "seq": 101,
+      "user_id": 1,
+      "update_binary": "<binary_data>",
+      "created_at": "2026-02-21T10:00:00Z"
+    }
+  ]
+}
+```
+
+#### Create Document Update
+```
+POST /documents/:id/updates
+X-User-Id: <user_id>
+
+<raw binary data of Yjs update>
+
+Response: No Content (204)
+```
+
+#### Create Document Snapshot
+```
+POST /documents/:id/snapshots
+
+<raw binary data of Yjs snapshot>
+
+Response: No Content (204)
 ```
 
 #### Delete Document
 ```
 DELETE /documents/:id
 Authorization: Bearer <jwt_token>
+
+Response: No Content (204)
 ```
 
 ### Collaborator Routes
@@ -152,6 +319,18 @@ Authorization: Bearer <jwt_token>
 ```
 GET /documents/:id/collaborators
 Authorization: Bearer <jwt_token>
+
+Response:
+[
+  {
+    "user": {
+      "id": 2,
+      "name": "Jane Doe",
+      "email": "jane@example.com"
+    },
+    "role": "editor"
+  }
+]
 ```
 
 #### Add Collaborator
@@ -164,16 +343,36 @@ Content-Type: application/json
   "user_id": 2,
   "role": "editor"  // or "viewer"
 }
+
+Response:
+{
+  "user": {
+    "id": 2,
+    "name": "Jane Doe",
+    "email": "jane@example.com"
+  },
+  "role": "editor"
+}
 ```
 
 #### Change Collaborator Role
 ```
-PUT /documents/:id/collaborators
+PATCH /documents/:id/collaborators
 Authorization: Bearer <jwt_token>
 Content-Type: application/json
 
 {
   "user_id": 2,
+  "role": "viewer"
+}
+
+Response:
+{
+  "user": {
+    "id": 2,
+    "name": "Jane Doe",
+    "email": "jane@example.com"
+  },
   "role": "viewer"
 }
 ```
@@ -182,17 +381,57 @@ Content-Type: application/json
 ```
 DELETE /documents/:id/collaborators/:userId
 Authorization: Bearer <jwt_token>
+
+Response:
+{
+  "message": "collaborator removed"
+}
 ```
 
 ### Internal Routes (Sync Server)
 
-These endpoints are protected by internal secret authentication.
+These endpoints are protected by internal secret authentication via `X-Internal-Secret` header.
 
 ```
 GET /internal/documents/:id/permission?user_id=<user_id>
-GET /internal/documents/:id/last-state
+X-Internal-Secret: <internal_secret>
+
+Response:
+{
+  "user_id": 1,
+  "document_id": 1,
+  "role": "owner"
+}
+```
+
+```
+GET /internal/documents/:id/state
+X-Internal-Secret: <internal_secret>
+
+Response:
+{
+  "snapshot": "<binary_data>",
+  "snapshot_seq": 100,
+  "updates": [...]
+}
+```
+
+```
 POST /internal/documents/:id/update
+X-Internal-Secret: <internal_secret>
+
+<binary update data>
+
+Response: No Content (204)
+```
+
+```
 POST /internal/documents/:id/snapshot
+X-Internal-Secret: <internal_secret>
+
+<binary snapshot data>
+
+Response: No Content (204)
 ```
 
 ## Environment Variables
@@ -203,6 +442,7 @@ Create a `.env` file in the root directory:
 # Server
 PORT=8080
 ENV=development
+WORKER_POOL_SIZE=5
 
 # Database
 DB_HOST=localhost
@@ -213,6 +453,7 @@ DB_NAME=markdown_editor
 
 # Redis
 REDIS_ADDRESS=localhost:6379
+REDIS_POOL_SIZE=10
 
 # JWT
 JWT_SECRET=your_jwt_secret_key
@@ -223,6 +464,8 @@ SYNC_SECRET=your_sync_secret
 
 # Internal Communication
 INTERNAL_SECRET=your_internal_secret
+
+SNAPSHOT_THRESHOLD=200
 ```
 
 ## Getting Started
@@ -249,7 +492,6 @@ go mod download
 3. Set up environment variables:
 ```bash
 cp .env.example .env
-# Edit .env with your configuration
 ```
 
 4. Run the development server:
@@ -272,36 +514,29 @@ The server will start on `http://localhost:8080`
 - `email`: string (unique)
 - `password_hash`: string
 - `is_active`: boolean
+- `token_version`: uint64 (for session management)
 - `created_at`, `updated_at`: timestamp
 
 ### Documents Table
 - `id`: uint64 (primary key)
 - `title`: string
 - `user_id`: uint64 (foreign key)
-- `update_seq`: uint64
+- `update_seq`: uint64 (tracks current update sequence)
 - `created_at`, `updated_at`: timestamp
 
 ### Document Updates Table
 - `id`: uint64 (primary key)
 - `document_id`: uint64 (foreign key)
-- `seq`: uint64
-- `update_binary`: bytea
-- `user_id`: uint64
+- `seq`: uint64 (sequence number)
+- `update_binary`: bytea (Yjs binary update)
+- `user_id`: uint64 (user who made the update)
 - `created_at`: timestamp
 
 ### Document Snapshots Table
 - `id`: uint64 (primary key)
 - `document_id`: uint64 (foreign key)
-- `seq`: uint64
-- `snapshot_binary`: bytea
-- `created_at`: timestamp
-
-### Document Versions Table
-- `id`: uint64 (primary key)
-- `document_id`: uint64 (foreign key)
-- `name`: string
-- `seq`: uint64
-- `created_by`: uint64
+- `seq`: uint64 (sequence number at snapshot)
+- `snapshot_binary`: bytea (Yjs binary snapshot)
 - `created_at`: timestamp
 
 ### Document Collaborators Table
@@ -313,22 +548,32 @@ The server will start on `http://localhost:8080`
 ## Key Concepts
 
 ### Authentication
-- Users authenticate via JWT tokens
-- Tokens are validated and stored in Redis
-- Token expiration: 3 days
-- Supports both header (`Authorization: Bearer`) and query parameter (`?token=`) authentication
+- Users authenticate via JWT tokens (access token + refresh token)
+- **Access Token**: Short-lived JWT token for API requests
+- **Refresh Token**: Long-lived HttpOnly cookie for obtaining new access tokens
+- Token validation uses token version for invalidation across sessions
+- Both header (`Authorization: Bearer <token>`) and cookie-based authentication supported
+- Token version increment (e.g., on password change) invalidates old tokens
+
+### Session Management
+- Each user has a `token_version` field that gets incremented on:
+  - Password change
+  - Logout (to invalidate all sessions)
+- Tokens include the token version at creation
+- Mismatched token version = expired/invalid session
 
 ### Authorization
-- **Owner**: Full control over document, can add/remove collaborators
-- **Editor**: Can edit the document and create updates
-- **Viewer**: Can only view the document, cannot make changes
+- **Owner**: Full control over document, can add/remove collaborators and delete document
+- **Editor**: Can edit the document, create updates, view collaborators
+- **Viewer**: Can only view the document and snapshots, no editing capabilities
 - **None**: No access to the document
 
 ### Document Syncing
-- Documents track updates with sequence numbers
-- Snapshots are created every 200 updates for optimization
-- The external sync server handles real-time collaboration
-- Updates are stored as binary Yjs updates
+- Documents track updates with sequence numbers (incremental)
+- Snapshots are created periodically (configurable threshold, default 200 updates) for optimization
+- The external sync server handles real-time collaboration via WebSocket
+- Updates are stored as binary Yjs updates for conflict-free collaborative editing
+- Snapshots contain the full document state at a given sequence point
 
 ## Testing
 
@@ -359,16 +604,16 @@ The application uses custom error types with HTTP status codes:
 
 ## Development
 
-### Code Organization
-- **domain**: Core business models
-- **repository**: Data access layer
-- **service**: Business logic layer
-- **handler**: HTTP request/response handling
+### Project Structure
+The project follows a clean architecture pattern with clear separation of concerns:
 
-### Step To Add New Features
-1. Define domain models in `internal/domain/`
-2. Create repository interface and implementation
-3. Create service interface and implementation
-4. Create HTTP handlers
-5. Register routes in `cmd/server/main.go`
-6. Write unit tests
+- **domain**: Core business models and entities
+- **repository**: Data access layer interfaces and implementations (using GORM)
+- **service**: Business logic layer with validation and orchestration
+- **handler**: HTTP request/response handling using Gin framework
+
+### Layers Overview
+1. **Handler Layer**: Validates HTTP input, calls service, formats responses
+2. **Service Layer**: Implements business logic, enforces authorization, manages cache
+3. **Repository Layer**: Manages database operations, implements data persistence
+4. **Domain Layer**: Defines core entities and value objects
