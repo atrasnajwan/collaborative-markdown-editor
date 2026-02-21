@@ -4,11 +4,11 @@ import (
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
 	"collaborative-markdown-editor/internal/sync"
+	"collaborative-markdown-editor/internal/worker"
 	"collaborative-markdown-editor/redis"
 	"context"
 	defError "errors"
 	"fmt"
-	"log"
 	"time"
 
 	"gorm.io/gorm"
@@ -36,11 +36,12 @@ type UserProvider interface {
 }
 
 type DefaultService struct {
-	repository   DocumentRepository
-	syncClient   *sync.SyncClient
-	userProvider UserProvider
-	cache *redis.Cache
-	snapshotThreshold uint64
+	repository   		DocumentRepository
+	syncClient   		*sync.SyncClient
+	userProvider 		UserProvider
+	cache 				*redis.Cache
+	snapshotThreshold 	uint64
+	workerPool 			*worker.WorkerPool
 }
 
 func NewService(
@@ -49,13 +50,15 @@ func NewService(
 	syncClient *sync.SyncClient,
 	cache *redis.Cache,
 	snapshotThreshold uint64,
+	wp *worker.WorkerPool,
 ) Service {
 	return &DefaultService{
-		repository:   repository,
-		syncClient:   syncClient,
-		userProvider: userProvider,
-		cache: cache,
-		snapshotThreshold: snapshotThreshold,
+		repository:   		repository,
+		syncClient:   		syncClient,
+		userProvider: 		userProvider,
+		cache: 				cache,
+		snapshotThreshold: 	snapshotThreshold,
+		workerPool: 		wp,
 	}
 }
 
@@ -209,19 +212,41 @@ func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, docID uint64,
 	}
 
 	if s.shouldSnapshot(ctx, docID) {
-		state, err := s.syncClient.FetchDocumentState(ctx, docID)
-		if err != nil {
-			return err
-		}
-
-		// cancel if the request timeout
-		ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		defer cancel()
-
-		return s.repository.CreateSnapshot(ctx, docID, state)
+		// run on the background
+		s.workerPool.Submit(func(bgCtx context.Context) error {
+            return s.handleBackgroundSnapshot(bgCtx, docID)
+        })
 	}
 
 	return nil
+}
+
+// run snapshot on the background
+func (s *DefaultService) handleBackgroundSnapshot(ctx context.Context, docID uint64) error {
+    lockKey := fmt.Sprintf("lock:snapshot:%d", docID)
+    
+    // This prevents multiple snapshots for the same document overlapping
+    locked, err := s.cache.SetNX(ctx, lockKey, "processing", 30*time.Second)
+    if err != nil || !locked {
+        return nil // Already being processed by another worker
+    }
+    defer s.cache.Invalidate(ctx, lockKey)
+
+    // Re-verify if snapshot is still needed
+    if !s.shouldSnapshot(ctx, docID) {
+        return nil
+    }
+
+    // set timeout for fetch from sync + save to DB to 10s
+    timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+    state, err := s.syncClient.FetchDocumentState(timeoutCtx, docID)
+    if err != nil {
+        return err
+    }
+
+    return s.repository.CreateSnapshot(timeoutCtx, docID, state)
 }
 
 func (s *DefaultService) CreateDocumentSnapshot(ctx context.Context, docID uint64, state []byte) error {
@@ -431,25 +456,22 @@ func (s *DefaultService) ChangeCollaboratorRole(
 	// invalidate cache
 	versionKey := fmt.Sprintf("user:%d:docs:shared:version", targetUserID)
     s.cache.IncrementVersion(ctx, versionKey)
+	
+	// Submit to Worker Pool
+	s.workerPool.Submit(func(bgCtx context.Context) error {
+		// 5s timeout
+		timeoutCtx, cancel := context.WithTimeout(bgCtx, 5*time.Second)
+		defer cancel()
 
-	// send update to sync-server
-	go func(dID, uID uint64, role string) {
-		// context with 5s timeout
-        bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-        defer cancel()
-
-		err = s.syncClient.UpdateUserPermission(
-			bgCtx,
-			dID,
-			uID,
-			role,
+		// send update to sync-server
+		return s.syncClient.UpdateUserPermission(
+			timeoutCtx,
+			docID,
+			targetUserID,
+			newRole,
 		)
-		if err != nil {
-			log.Printf("[SYNC SERVER ERROR] Failed to notify user %d role in doc %d is changed to %v! %v", uID, dID, role, err)
-		}
-		
-	}(docID, targetUserID, newRole)
-		
+	})
+
 	user, err := s.userProvider.GetUserByID(ctx, targetUserID)
 	if err != nil {
 		return nil, err
@@ -497,23 +519,21 @@ func (s *DefaultService) RemoveCollaborator(
 	// invalidate cache
 	versionKey := fmt.Sprintf("user:%d:docs:shared:version", targetUserID)
     s.cache.IncrementVersion(ctx, versionKey)
+	
+	// Submit to Worker Pool
+	s.workerPool.Submit(func(bgCtx context.Context) error {
+		// 5s timeout
+		timeoutCtx, cancel := context.WithTimeout(bgCtx, 5*time.Second)
+		defer cancel()
 
-	// send update to sync-server
-	go func(dID, uID uint64) {
-		// context with 5s timeout
-        bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-        defer cancel()
-
-		err = s.syncClient.UpdateUserPermission(
-			bgCtx,
-			dID,
-			uID,
+		// send update to sync-server
+		return s.syncClient.UpdateUserPermission(
+			timeoutCtx,
+			docID,
+			targetUserID,
 			"none",
 		)
-		if err != nil {
-			log.Printf("[SYNC SERVER ERROR] Failed to notify user %d role in doc %d is removed! %v", uID, dID, err)
-		}
-	}(docID, targetUserID)
+	})
 
 	return nil
 }
@@ -549,21 +569,18 @@ func (s *DefaultService) DeleteDocument(ctx context.Context, docID uint64, userI
 		}
     }
 
-	
-	// send update to sync-server
-	go func(id uint64) {
-		// context with 5s timeout
-        bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-        defer cancel()
-		
-		err := s.syncClient.RemoveDocument(
-			bgCtx,
-			id,
+	// Submit to Worker Pool
+	s.workerPool.Submit(func(bgCtx context.Context) error {
+		// 5s timeout
+		timeoutCtx, cancel := context.WithTimeout(bgCtx, 5*time.Second)
+		defer cancel()
+
+		// send update to sync-server
+		return s.syncClient.RemoveDocument(
+			timeoutCtx,
+			docID,
 		)
-		if err != nil {
-			log.Printf("[SYNC SERVER ERROR] Failed to notify doc %d is deleted! %v", id, err)
-		}
-    }(docID)
-	
+	})
+
 	return  nil
 }

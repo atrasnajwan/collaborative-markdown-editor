@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 )
@@ -72,6 +73,7 @@ func (s *SyncClient) FetchDocumentState(ctx context.Context, docID uint64) ([]by
     path := fmt.Sprintf("/internal/documents/%d/state", docID)
     resp, err := s.doRequest(ctx, http.MethodGet, path, nil)
     if err != nil {
+        log.Printf("[SYNC SERVER ERROR] Failed to get last state doc %d", docID)
         return nil, err
     }
     defer resp.Body.Close()
@@ -95,6 +97,7 @@ func (s *SyncClient) UpdateUserPermission(ctx context.Context, docID, userID uin
     
     resp, err := s.doRequest(ctx, http.MethodPut, path, payload)
     if err != nil {
+        log.Printf("[SYNC SERVER ERROR] Failed to notify user %d role on doc %d is changed!", userID, docID)
         return err
     }
     resp.Body.Close()
@@ -106,6 +109,7 @@ func (s *SyncClient) RemoveDocument(ctx context.Context, docID uint64) error {
     path := fmt.Sprintf("/internal/documents/%d", docID)
     resp, err := s.doRequest(ctx, http.MethodDelete, path, nil)
     if err != nil {
+        log.Printf("[SYNC SERVER ERROR] Failed to notify user that doc %d is removed!", docID)
         return err
     }
     resp.Body.Close()

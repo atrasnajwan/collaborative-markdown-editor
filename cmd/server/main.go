@@ -7,6 +7,7 @@ import (
 	"collaborative-markdown-editor/internal/middleware"
 	"collaborative-markdown-editor/internal/sync"
 	"collaborative-markdown-editor/internal/user"
+	"collaborative-markdown-editor/internal/worker"
 	"collaborative-markdown-editor/redis"
 	"context"
 	"fmt"
@@ -39,13 +40,23 @@ func main() {
 	redisClient, _ := redis.NewRedisClient()
 	redisCache := redis.NewCache(redisClient)
 
+	// worker
+	wp := worker.NewWorkerPool(config.AppConfig.WorkerPollSize) // Start N concurrent workers
+
 	// Initialize repository
 	userRepo := user.NewRepository(db.AppDb)
 	docRepo := document.NewRepository(db.AppDb)
 	// Initialize service
 	userService := user.NewService(userRepo, redisCache)
 	syncClient := sync.NewSyncClient()
-	docService := document.NewService(docRepo, userService, syncClient, redisCache, uint64(config.AppConfig.DocumentSnapshotThreshold))
+	docService := document.NewService(
+		docRepo,
+		userService,
+		syncClient,
+		redisCache,
+		uint64(config.AppConfig.DocumentSnapshotThreshold),
+		wp,
+	)
 	// Initialize handler
 	docHandler := document.NewHandler(docService)
 	userHandler := user.NewHandler(userService)
@@ -146,16 +157,18 @@ func main() {
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	<-quit // block until signal received
 	log.Println("Shutting down server...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
 		log.Println("Server shutdown error:", err)
 	}
 
-	<-ctx.Done()
+	log.Println("Finishing background tasks...")
+    wp.Shutdown()
+
 	log.Println("Server shutdown complete")
 }

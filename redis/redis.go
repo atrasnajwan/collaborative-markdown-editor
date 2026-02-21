@@ -51,6 +51,15 @@ func (c *Cache) Set(ctx context.Context, key string, value interface{}, ttl time
 	return c.Client.Set(ctx, key, data, ttl).Err()
 }
 
+// set a key's value only if the key does not already exist. (return false -> key already exist)
+func (c *Cache) SetNX(ctx context.Context, key string, value interface{}, ttl time.Duration) (bool, error) {
+	if c.Client == nil {
+		return true, nil
+	}
+
+	return c.Client.SetNX(ctx, key, value, ttl).Result()
+}
+
 // Retrieves JSON and unmarshals it to variable
 func (c *Cache) Get(ctx context.Context, key string, dest interface{}) (bool, error) {
 	if c.Client == nil {

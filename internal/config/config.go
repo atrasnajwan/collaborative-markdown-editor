@@ -39,6 +39,8 @@ type Config struct {
 	FrontendAddress string
 
 	DocumentSnapshotThreshold int
+
+	WorkerPollSize int
 }
 
 // Global application configuration
@@ -86,6 +88,7 @@ func LoadConfig() {
 		JWTSecret:         			jwtSecret,
 		InternalSecret:    			getEnv("INTERNAL_SECRET", "collab-internal-secret"),
 		FrontendAddress:   			getEnv("FRONTEND_ADDRESS", "https://production-frontend.com"),
+		WorkerPollSize:      		getEnv("WORKER_POOL_SIZE", 5),
 	}
 }
 
