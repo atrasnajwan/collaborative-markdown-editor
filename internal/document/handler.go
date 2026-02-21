@@ -100,7 +100,7 @@ func (h *Handler) ShowDocument(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)
 	if err != nil {
-		c.Error(err)
+		c.Error(errors.NotFound("Document not found", err))
 		return
 	}
 	
@@ -119,7 +119,7 @@ func (h *Handler) ShowUserRole(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)
 	if err != nil {
-		c.Error(err)
+		c.Error(errors.NotFound("Document not found", err))
 		return
 	}
 
@@ -143,7 +143,7 @@ func (h *Handler) ShowDocumentState(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docIDUint, err := strconv.ParseUint(docIDStr, 10, 64)
 	if err != nil {
-		c.Error(err)
+		c.Error(errors.NotFound("Document not found", err))
 		return
 	}
 	
@@ -160,7 +160,7 @@ func (h *Handler) CreateUpdate(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docID, err := strconv.ParseUint(docIDStr, 10, 64)
 	if err != nil {
-		c.Error(err)
+		c.Error(errors.NotFound("Document not found", err))
 		return
 	}
 
@@ -197,7 +197,7 @@ func (h *Handler) CreateSnapshot(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docID, err := strconv.ParseUint(docIDStr, 10, 64)
 	if err != nil {
-		c.Error(err)
+		c.Error(errors.NotFound("Document not found", err))
 		return
 	}
 
@@ -223,7 +223,7 @@ func (h *Handler) CreateSnapshot(c *gin.Context) {
 func (h *Handler) ListCollaborators(c *gin.Context) {
 	docID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.Error(err)
+		c.Error(errors.NotFound("Document not found", err))
 		return
 	}
 
@@ -250,7 +250,7 @@ type AddCollaboratorRequest struct {
 func (h *Handler) AddCollaborator(c *gin.Context) {
 	docID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.Error(err)
+		c.Error(errors.NotFound("Document not found", err))
 		return
 	}
 
@@ -285,7 +285,7 @@ type ChangeCollaboratorRoleRequest struct {
 func (h *Handler) ChangeCollaboratorRole(c *gin.Context) {
 	docID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.Error(err)
+		c.Error(errors.NotFound("Document not found", err))
 		return
 	}
 
@@ -316,7 +316,7 @@ func (h *Handler) ChangeCollaboratorRole(c *gin.Context) {
 func (h *Handler) RemoveCollaborator(c *gin.Context) {
 	docID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.Error(err)
+		c.Error(errors.NotFound("Document not found", err))
 		return
 	}
 
@@ -349,7 +349,7 @@ func (h *Handler) DeleteDocument(c *gin.Context) {
 	docIDStr := c.Param("id")
 	docID, err := strconv.ParseUint(docIDStr, 10, 64)
 	if err != nil {
-		c.Error(err)
+		c.Error(errors.NotFound("Document not found", err))
 		return
 	}
 

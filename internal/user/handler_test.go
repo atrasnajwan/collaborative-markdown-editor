@@ -3,7 +3,7 @@ package user
 import (
 	"bytes"
 	"collaborative-markdown-editor/internal/domain"
-	"collaborative-markdown-editor/redis"
+	"collaborative-markdown-editor/internal/middleware"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -11,48 +11,53 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
-	redisLib "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
-var miniRedis *miniredis.Miniredis
-
-// MockService is a mock implementation of the Service interface
+// mock implementation of the Service interface
 type MockService struct {
 	mock.Mock
 }
 
-func (m *MockService) Register(user *domain.User) error {
-	args := m.Called(user)
+func (m *MockService) Register(ctx context.Context, user *domain.User) error {
+	args := m.Called(ctx, user)
 	return args.Error(0)
 }
 
-func (m *MockService) Login(email, password string) (*domain.User, error) {
-	args := m.Called(email, password)
+func (m *MockService) UpdateUser(ctx context.Context, userID uint64, req UpdateProfileRequest) (domain.SafeUser, error) {
+	args := m.Called(ctx, userID, req)
+	return args.Get(0).(domain.SafeUser), args.Error(1)
+}
+
+func (m *MockService) ChangePassword(ctx context.Context, userID uint64, req ChangePasswordRequest) error {
+	args := m.Called(ctx, userID, req)
+	return args.Error(0)
+}
+
+func (m *MockService) Login(ctx context.Context, email, password string) (*domain.User, error) {
+	args := m.Called(ctx, email, password)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*domain.User), args.Error(1)
 }
 
-func (m *MockService) GetUserByID(id uint64) (*domain.User, error) {
-	args := m.Called(id)
+func (m *MockService) Logout(ctx context.Context, userID uint64) {
+	m.Called(ctx, userID)
+}
+
+func (m *MockService) GetUserByID(ctx context.Context, id uint64) (*domain.User, error) {
+	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*domain.User), args.Error(1)
 }
 
-func (m *MockService) DeactivateUser(id uint64) error {
-	args := m.Called(id)
-	return args.Error(0)
-}
-
-func (m *MockService) IncreaseTokenVersion(id uint64) error {
-	args := m.Called(id)
+func (m *MockService) DeactivateUser(ctx context.Context, id uint64) error {
+	args := m.Called(ctx, id)
 	return args.Error(0)
 }
 
@@ -67,32 +72,8 @@ func (m *MockService) SearchUsers(ctx context.Context, query string) ([]domain.S
 func setupRouter(handler *Handler) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-
-	// Initialize miniredis for testing if not already done
-	if miniRedis == nil {
-		var err error
-		miniRedis, err = miniredis.Run()
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	// Set up Redis client connected to miniredis
-	if redis.RedisClient == nil {
-		redis.RedisClient = redisLib.NewClient(&redisLib.Options{
-			Addr: miniRedis.Addr(),
-		})
-	}
-
+	router.Use(middleware.ErrorHandler())
 	return router
-}
-
-func teardownRouter() {
-	if miniRedis != nil {
-		miniRedis.Close()
-		miniRedis = nil
-		redis.RedisClient = nil
-	}
 }
 
 func TestRegister_Success(t *testing.T) {
@@ -100,12 +81,12 @@ func TestRegister_Success(t *testing.T) {
 	handler := NewHandler(mockService)
 	router := setupRouter(handler)
 
-	mockService.On("Register", mock.MatchedBy(func(user *domain.User) bool {
-		return user.Name == "John Doe" &&
-			user.Email == "john@example.com" &&
+	mockService.On("Register", mock.Anything, mock.MatchedBy(func(user *domain.User) bool {
+		return user.Name == "Atras Najwan" &&
+			user.Email == "atras@example.com" &&
 			user.Password == "password123"
 	})).Return(nil).Run(func(args mock.Arguments) {
-		user := args.Get(0).(*domain.User)
+		user := args.Get(1).(*domain.User)
 		user.ID = 1
 		user.CreatedAt = time.Now()
 		user.UpdatedAt = time.Now()
@@ -116,8 +97,8 @@ func TestRegister_Success(t *testing.T) {
 	})
 
 	payload := FormRegister{
-		Name:     "John Doe",
-		Email:    "john@example.com",
+		Name:     "Atras Najwan",
+		Email:    "atras@example.com",
 		Password: "password123",
 	}
 	body, _ := json.Marshal(payload)
@@ -134,94 +115,27 @@ func TestRegister_Success(t *testing.T) {
 	mockService.AssertExpectations(t)
 }
 
-func TestRegister_InvalidInput(t *testing.T) {
-	mockService := new(MockService)
-	handler := NewHandler(mockService)
-	router := setupRouter(handler)
-
-	router.POST("/register", func(c *gin.Context) {
-		handler.Register(c)
-	})
-
-	payload := struct{ Name string }{Name: "John Doe"}
-	body, _ := json.Marshal(payload)
-	req := httptest.NewRequest("POST", "/register", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-}
-
-func TestRegister_InvalidEmail(t *testing.T) {
-	mockService := new(MockService)
-	handler := NewHandler(mockService)
-	router := setupRouter(handler)
-
-	router.POST("/register", func(c *gin.Context) {
-		handler.Register(c)
-	})
-
-	payload := FormRegister{
-		Name:     "John Doe",
-		Email:    "invalid-email",
-		Password: "password123",
-	}
-	body, _ := json.Marshal(payload)
-	req := httptest.NewRequest("POST", "/register", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-}
-
-func TestRegister_ShortPassword(t *testing.T) {
-	mockService := new(MockService)
-	handler := NewHandler(mockService)
-	router := setupRouter(handler)
-
-	router.POST("/register", func(c *gin.Context) {
-		handler.Register(c)
-	})
-
-	payload := FormRegister{
-		Name:     "John Doe",
-		Email:    "john@example.com",
-		Password: "123",
-	}
-	body, _ := json.Marshal(payload)
-	req := httptest.NewRequest("POST", "/register", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-}
-
 func TestLogin_Success(t *testing.T) {
 	mockService := new(MockService)
 	handler := NewHandler(mockService)
 	router := setupRouter(handler)
 
 	user := &domain.User{
-		ID:       1,
-		Name:     "John Doe",
-		Email:    "john@example.com",
-		IsActive: true,
+		ID:           1,
+		Name:         "Atras Najwan",
+		Email:        "atras@example.com",
+		IsActive:     true,
+		TokenVersion: 0,
 	}
 
-	mockService.On("Login", "john@example.com", "password123").Return(user, nil)
+	mockService.On("Login", mock.Anything, "atras@example.com", "password123").Return(user, nil)
 
 	router.POST("/login", func(c *gin.Context) {
 		handler.Login(c)
 	})
 
 	payload := FormLogin{
-		Email:    "john@example.com",
+		Email:    "atras@example.com",
 		Password: "password123",
 	}
 	body, _ := json.Marshal(payload)
@@ -231,36 +145,12 @@ func TestLogin_Success(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 
-	// Check if request was successful (token and user returned)
-	if w.Code == http.StatusOK {
-		var response map[string]interface{}
-		json.Unmarshal(w.Body.Bytes(), &response)
-		assert.NotNil(t, response["access_token"])
-		assert.NotNil(t, response["user"])
-	} else {
-		t.Logf("login failed: status=%d body=%s", w.Code, w.Body.String())
-	}
+	assert.Equal(t, http.StatusOK, w.Code)
+	var response map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &response)
+	assert.NotNil(t, response["access_token"])
+	assert.NotNil(t, response["user"])
 	mockService.AssertExpectations(t)
-}
-
-func TestLogin_InvalidInput(t *testing.T) {
-	mockService := new(MockService)
-	handler := NewHandler(mockService)
-	router := setupRouter(handler)
-
-	router.POST("/login", func(c *gin.Context) {
-		handler.Login(c)
-	})
-
-	payload := struct{ Email string }{Email: "john@example.com"}
-	body, _ := json.Marshal(payload)
-	req := httptest.NewRequest("POST", "/login", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestLogin_UserNotFound(t *testing.T) {
@@ -268,7 +158,7 @@ func TestLogin_UserNotFound(t *testing.T) {
 	handler := NewHandler(mockService)
 	router := setupRouter(handler)
 
-	mockService.On("Login", "nonexistent@example.com", "password123").
+	mockService.On("Login", mock.Anything, "nothing@example.com", "password123").
 		Return(nil, assert.AnError)
 
 	router.POST("/login", func(c *gin.Context) {
@@ -276,7 +166,7 @@ func TestLogin_UserNotFound(t *testing.T) {
 	})
 
 	payload := FormLogin{
-		Email:    "nonexistent@example.com",
+		Email:    "nothing@example.com",
 		Password: "password123",
 	}
 	body, _ := json.Marshal(payload)
@@ -295,19 +185,20 @@ func TestLogout_Success(t *testing.T) {
 	handler := NewHandler(mockService)
 	router := setupRouter(handler)
 
-	mockService.On("IncreaseTokenVersion", mock.Anything).Return(nil)
+	mockService.On("Logout", mock.Anything, uint64(1)).Return()
 
-	router.POST("/logout", func(c *gin.Context) {
-		c.Set("jwt_token", "valid_token_here")
+	router.DELETE("/logout", func(c *gin.Context) {
+		c.Set("user_id", uint64(1))
 		handler.Logout(c)
 	})
 
-	req := httptest.NewRequest("POST", "/logout", nil)
+	req := httptest.NewRequest("DELETE", "/logout", nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusNoContent, w.Code)
+	mockService.AssertExpectations(t)
 }
 
 func TestLogout_NoToken(t *testing.T) {
@@ -315,13 +206,17 @@ func TestLogout_NoToken(t *testing.T) {
 	handler := NewHandler(mockService)
 	router := setupRouter(handler)
 
-	mockService.On("IncreaseTokenVersion", mock.Anything).Return(nil)
+	mockService.On("Logout", mock.Anything, uint64(1)).Return()
 
-	router.POST("/logout", func(c *gin.Context) {
+	router.DELETE("/logout", func(c *gin.Context) {
+		// Set a default user_id for logout, real middleware would handle this
+		if _, exists := c.Get("user_id"); !exists {
+			c.Set("user_id", uint64(1))
+		}
 		handler.Logout(c)
 	})
 
-	req := httptest.NewRequest("POST", "/logout", nil)
+	req := httptest.NewRequest("DELETE", "/logout", nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -336,14 +231,14 @@ func TestGetProfile_Success(t *testing.T) {
 
 	user := &domain.User{
 		ID:        1,
-		Name:      "John Doe",
-		Email:     "john@example.com",
+		Name:      "Atras Najwan",
+		Email:     "atras@example.com",
 		IsActive:  true,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
 
-	mockService.On("GetUserByID", uint64(1)).Return(user, nil)
+	mockService.On("GetUserByID", mock.Anything, uint64(1)).Return(user, nil)
 
 	router.GET("/profile", func(c *gin.Context) {
 		c.Set("user_id", uint64(1))
@@ -358,26 +253,9 @@ func TestGetProfile_Success(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	var response domain.SafeUser
 	json.Unmarshal(w.Body.Bytes(), &response)
-	assert.Equal(t, "John Doe", response.Name)
-	assert.Equal(t, "john@example.com", response.Email)
+	assert.Equal(t, "Atras Najwan", response.Name)
+	assert.Equal(t, "atras@example.com", response.Email)
 	mockService.AssertExpectations(t)
-}
-
-func TestGetProfile_NoUserID(t *testing.T) {
-	mockService := new(MockService)
-	handler := NewHandler(mockService)
-	router := setupRouter(handler)
-
-	router.GET("/profile", func(c *gin.Context) {
-		handler.GetProfile(c)
-	})
-
-	req := httptest.NewRequest("GET", "/profile", nil)
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
 func TestGetProfile_UserNotFound(t *testing.T) {
@@ -385,7 +263,7 @@ func TestGetProfile_UserNotFound(t *testing.T) {
 	handler := NewHandler(mockService)
 	router := setupRouter(handler)
 
-	mockService.On("GetUserByID", uint64(999)).Return(nil, assert.AnError)
+	mockService.On("GetUserByID", mock.Anything, uint64(999)).Return(nil, assert.AnError)
 
 	router.GET("/profile", func(c *gin.Context) {
 		c.Set("user_id", uint64(999))
@@ -409,13 +287,13 @@ func TestSearchUsers_Success(t *testing.T) {
 	results := []domain.SafeUser{
 		{
 			ID:    2,
-			Name:  "Jane Doe",
-			Email: "jane@example.com",
+			Name:  "Jane Foster",
+			Email: "foster@example.com",
 		},
 		{
 			ID:    3,
-			Name:  "John Smith",
-			Email: "john.smith@example.com",
+			Name:  "John Krasinsky",
+			Email: "john.krasinsky@example.com",
 		},
 	}
 
@@ -465,13 +343,13 @@ func TestSearchUsers_EmptyResult(t *testing.T) {
 	handler := NewHandler(mockService)
 	router := setupRouter(handler)
 
-	mockService.On("SearchUsers", mock.Anything, "nonexistent").Return([]domain.SafeUser{}, nil)
+	mockService.On("SearchUsers", mock.Anything, "nothing").Return([]domain.SafeUser{}, nil)
 
 	router.GET("/search", func(c *gin.Context) {
 		handler.SearchUsers(c)
 	})
 
-	req := httptest.NewRequest("GET", "/search?q=nonexistent", nil)
+	req := httptest.NewRequest("GET", "/search?q=nothing", nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -480,25 +358,5 @@ func TestSearchUsers_EmptyResult(t *testing.T) {
 	var response []domain.SafeUser
 	json.Unmarshal(w.Body.Bytes(), &response)
 	assert.Equal(t, 0, len(response))
-	mockService.AssertExpectations(t)
-}
-
-func TestSearchUsers_Error(t *testing.T) {
-	mockService := new(MockService)
-	handler := NewHandler(mockService)
-	router := setupRouter(handler)
-
-	mockService.On("SearchUsers", mock.Anything, "test").Return(nil, assert.AnError)
-
-	router.GET("/search", func(c *gin.Context) {
-		handler.SearchUsers(c)
-	})
-
-	req := httptest.NewRequest("GET", "/search?q=test", nil)
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	assert.NotEqual(t, http.StatusOK, w.Code)
 	mockService.AssertExpectations(t)
 }

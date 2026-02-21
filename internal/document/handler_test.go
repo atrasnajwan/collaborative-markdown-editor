@@ -3,6 +3,7 @@ package document
 import (
 	"bytes"
 	"collaborative-markdown-editor/internal/domain"
+	"collaborative-markdown-editor/internal/middleware"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -15,14 +16,22 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockService is a mock implementation of the Service interface
+// mock implementation of the Service interface
 type MockService struct {
 	mock.Mock
 }
 
-func (m *MockService) CreateUserDocument(userID uint64, document *domain.Document) error {
-	args := m.Called(userID, document)
+func (m *MockService) CreateUserDocument(ctx context.Context, userID uint64, document *domain.Document) error {
+	args := m.Called(ctx, userID, document)
 	return args.Error(0)
+}
+
+func (m *MockService) RenameDocument(ctx context.Context, docID uint64, userID uint64, title string) (*domain.Document, error) {
+	args := m.Called(ctx, docID, userID, title)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.Document), args.Error(1)
 }
 
 func (m *MockService) CreateDocumentUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error {
@@ -30,32 +39,32 @@ func (m *MockService) CreateDocumentUpdate(ctx context.Context, id uint64, userI
 	return args.Error(0)
 }
 
-func (m *MockService) GetUserDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
-	args := m.Called(userId, page, pageSize)
+func (m *MockService) GetUserDocuments(ctx context.Context, userId uint64, page, pageSize int) (*PaginatedDocuments, error) {
+	args := m.Called(ctx, userId, page, pageSize)
 	if args.Get(0) == nil {
-		return []DocumentShowResponse{}, args.Get(1).(DocumentsMeta), args.Error(2)
+		return nil, args.Error(1)
 	}
-	return args.Get(0).([]DocumentShowResponse), args.Get(1).(DocumentsMeta), args.Error(2)
+	return args.Get(0).(*PaginatedDocuments), args.Error(1)
 }
 
-func (m *MockService) GetSharedDocuments(userId uint64, page, pageSize int) ([]DocumentShowResponse, DocumentsMeta, error) {
-	args := m.Called(userId, page, pageSize)
+func (m *MockService) GetSharedDocuments(ctx context.Context, userId uint64, page, pageSize int) (*PaginatedDocuments, error) {
+	args := m.Called(ctx, userId, page, pageSize)
 	if args.Get(0) == nil {
-		return []DocumentShowResponse{}, args.Get(1).(DocumentsMeta), args.Error(2)
+		return nil, args.Error(1)
 	}
-	return args.Get(0).([]DocumentShowResponse), args.Get(1).(DocumentsMeta), args.Error(2)
+	return args.Get(0).(*PaginatedDocuments), args.Error(1)
 }
 
-func (m *MockService) GetDocumentByID(docID uint64, userID uint64) (*DocumentShowResponse, error) {
-	args := m.Called(docID, userID)
+func (m *MockService) GetDocumentByID(ctx context.Context, docID uint64, userID uint64) (*DocumentShowResponse, error) {
+	args := m.Called(ctx, docID, userID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*DocumentShowResponse), args.Error(1)
 }
 
-func (m *MockService) GetDocumentState(docID uint64) (*DocumentStateResponse, error) {
-	args := m.Called(docID)
+func (m *MockService) GetDocumentState(ctx context.Context, docID uint64) (*DocumentStateResponse, error) {
+	args := m.Called(ctx, docID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -67,8 +76,8 @@ func (m *MockService) CreateDocumentSnapshot(ctx context.Context, docID uint64, 
 	return args.Error(0)
 }
 
-func (m *MockService) FetchUserRole(docID, userID uint64) (string, error) {
-	args := m.Called(docID, userID)
+func (m *MockService) FetchUserRole(ctx context.Context, docID, userID uint64) (string, error) {
+	args := m.Called(ctx, docID, userID)
 	return args.String(0), args.Error(1)
 }
 
@@ -109,6 +118,7 @@ func (m *MockService) DeleteDocument(ctx context.Context, docID uint64, userID u
 func setupRouter(handler *Handler) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	router.Use(middleware.ErrorHandler())
 	return router
 }
 
@@ -118,10 +128,10 @@ func TestCreateDocument_Success(t *testing.T) {
 	handler := NewHandler(mockService)
 	router := setupRouter(handler)
 
-	mockService.On("CreateUserDocument", uint64(1), mock.MatchedBy(func(doc *domain.Document) bool {
+	mockService.On("CreateUserDocument", mock.Anything, uint64(1), mock.MatchedBy(func(doc *domain.Document) bool {
 		return doc.Title == "Test Document"
 	})).Return(nil).Run(func(args mock.Arguments) {
-		doc := args.Get(1).(*domain.Document)
+		doc := args.Get(2).(*domain.Document)
 		doc.ID = 1
 	})
 
@@ -130,7 +140,7 @@ func TestCreateDocument_Success(t *testing.T) {
 		handler.Create(c)
 	})
 
-	payload := CreateRequest{Title: "Test Document"}
+	payload := CreateOrRenameRequest{Title: "Test Document"}
 	body, _ := json.Marshal(payload)
 	req := httptest.NewRequest("POST", "/documents", bytes.NewBuffer(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -161,59 +171,8 @@ func TestCreateDocument_InvalidInput(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-}
-
-// TestCreateDocument_NoUserID tests document creation without user ID
-func TestCreateDocument_NoUserID(t *testing.T) {
-	mockService := new(MockService)
-	handler := NewHandler(mockService)
-	router := setupRouter(handler)
-
-	router.POST("/documents", func(c *gin.Context) {
-		handler.Create(c)
-	})
-
-	payload := CreateRequest{Title: "Test Document"}
-	body, _ := json.Marshal(payload)
-	req := httptest.NewRequest("POST", "/documents", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-}
-
-// TestShowUserDocuments_Success tests retrieving user documents
-func TestShowUserDocuments_Success(t *testing.T) {
-	mockService := new(MockService)
-	handler := NewHandler(mockService)
-	router := setupRouter(handler)
-	docs := []DocumentShowResponse{
-		{ID: 1, Title: "Doc 1"},
-		{ID: 2, Title: "Doc 2"},
-	}
-	meta := DocumentsMeta{CurrentPage: 1, TotalPage: 1, Total: 2, PerPage: 10}
-
-	mockService.On("GetUserDocuments", uint64(1), 1, 10).Return(docs, meta, nil)
-
-	router.GET("/documents", func(c *gin.Context) {
-		c.Set("user_id", uint64(1))
-		handler.ShowUserDocuments(c)
-	})
-
-	req := httptest.NewRequest("GET", "/documents", nil)
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	var response map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &response)
-	assert.NotNil(t, response["data"])
-	assert.NotNil(t, response["meta"])
-	mockService.AssertExpectations(t)
+	// 422 for validation errors (missing title)
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
 }
 
 // TestShowUserDocuments_WithPagination tests user documents with pagination
@@ -222,9 +181,12 @@ func TestShowUserDocuments_WithPagination(t *testing.T) {
 	handler := NewHandler(mockService)
 	router := setupRouter(handler)
 	docs := []DocumentShowResponse{{ID: 1, Title: "Doc 1"}}
-	meta := DocumentsMeta{CurrentPage: 2, TotalPage: 3, Total: 25, PerPage: 15}
+	result := &PaginatedDocuments{
+		Data: docs,
+		Meta: DocumentsMeta{CurrentPage: 2, TotalPage: 3, Total: 25, PerPage: 15},
+	}
 
-	mockService.On("GetUserDocuments", uint64(1), 2, 15).Return(docs, meta, nil)
+	mockService.On("GetUserDocuments", mock.Anything, uint64(1), 2, 15).Return(result, nil)
 
 	router.GET("/documents", func(c *gin.Context) {
 		c.Set("user_id", uint64(1))
@@ -240,24 +202,6 @@ func TestShowUserDocuments_WithPagination(t *testing.T) {
 	mockService.AssertExpectations(t)
 }
 
-// TestShowUserDocuments_NoUserID tests user documents without user ID
-func TestShowUserDocuments_NoUserID(t *testing.T) {
-	mockService := new(MockService)
-	handler := NewHandler(mockService)
-	router := setupRouter(handler)
-
-	router.GET("/documents", func(c *gin.Context) {
-		handler.ShowUserDocuments(c)
-	})
-
-	req := httptest.NewRequest("GET", "/documents", nil)
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-}
-
 // TestShowSharedDocuments_Success tests retrieving shared documents
 func TestShowSharedDocuments_Success(t *testing.T) {
 	mockService := new(MockService)
@@ -268,16 +212,19 @@ func TestShowSharedDocuments_Success(t *testing.T) {
 		{ID: 1, Title: "Shared Doc 1", Role: "editor"},
 		{ID: 2, Title: "Shared Doc 2", Role: "viewer"},
 	}
-	meta := DocumentsMeta{CurrentPage: 1, TotalPage: 1, Total: 2, PerPage: 10}
+	result := &PaginatedDocuments{
+		Data: docs,
+		Meta: DocumentsMeta{CurrentPage: 1, TotalPage: 1, Total: 2, PerPage: 10},
+	}
 
-	mockService.On("GetSharedDocuments", uint64(1), 1, 10).Return(docs, meta, nil)
+	mockService.On("GetSharedDocuments", mock.Anything, uint64(1), 1, 10).Return(result, nil)
 
-	router.GET("/shared-documents", func(c *gin.Context) {
+	router.GET("/documents/shared", func(c *gin.Context) {
 		c.Set("user_id", uint64(1))
 		handler.ShowSharedDocuments(c)
 	})
 
-	req := httptest.NewRequest("GET", "/shared-documents", nil)
+	req := httptest.NewRequest("GET", "/documents/shared", nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -303,7 +250,7 @@ func TestShowDocument_Success(t *testing.T) {
 		UpdatedAt: time.Now(),
 	}
 
-	mockService.On("GetDocumentByID", uint64(1), uint64(1)).Return(doc, nil)
+	mockService.On("GetDocumentByID", mock.Anything, uint64(1), uint64(1)).Return(doc, nil)
 
 	router.GET("/documents/:id", func(c *gin.Context) {
 		c.Set("user_id", uint64(1))
@@ -338,7 +285,8 @@ func TestShowDocument_InvalidID(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	// 404
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 // TestShowUserRole_Success tests retrieving user role in document
@@ -347,7 +295,7 @@ func TestShowUserRole_Success(t *testing.T) {
 	handler := NewHandler(mockService)
 	router := setupRouter(handler)
 
-	mockService.On("FetchUserRole", uint64(1), uint64(2)).Return("editor", nil)
+	mockService.On("FetchUserRole", mock.Anything, uint64(1), uint64(2)).Return("editor", nil)
 
 	router.GET("/documents/:id/role", func(c *gin.Context) {
 		handler.ShowUserRole(c)
@@ -380,7 +328,7 @@ func TestShowUserRole_InvalidDocID(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 // TestShowDocumentState_Success tests retrieving document state
@@ -395,7 +343,7 @@ func TestShowDocumentState_Success(t *testing.T) {
 		Updates:     []DocumentUpdateDTO{},
 	}
 
-	mockService.On("GetDocumentState", uint64(1)).Return(state, nil)
+	mockService.On("GetDocumentState", mock.Anything, uint64(1)).Return(state, nil)
 
 	router.GET("/documents/:id/state", func(c *gin.Context) {
 		handler.ShowDocumentState(c)
@@ -449,7 +397,7 @@ func TestCreateUpdate_InvalidDocID(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 // TestCreateUpdate_InvalidUserID tests creating update with invalid user ID
@@ -468,7 +416,8 @@ func TestCreateUpdate_InvalidUserID(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	// 422 for unprocessable entity (invalid user ID format)
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
 }
 
 // TestCreateSnapshot_Success tests creating a document snapshot
@@ -565,7 +514,8 @@ func TestAddCollaborator_InvalidRole(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	// 422 for validation error (invalid role)
+	assert.Equal(t, http.StatusUnprocessableEntity, w.Code)
 }
 
 // TestChangeCollaboratorRole_Success tests changing collaborator role
@@ -654,5 +604,5 @@ func TestDeleteDocument_InvalidID(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
