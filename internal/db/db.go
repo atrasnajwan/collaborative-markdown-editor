@@ -4,9 +4,12 @@ import (
 	"collaborative-markdown-editor/internal/config"
 	"fmt"
 	"log"
+	"os"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var AppDb *gorm.DB
@@ -19,8 +22,21 @@ func ConnectDb() error {
 			config.AppConfig.DBName,
 			config.AppConfig.DBPort,
 		)
+		
+	level := logger.Info
+	if config.AppConfig.Environment == "production" {
+		level = logger.Error
+	}
+	newLogger := logger.New(
+		log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
+		logger.Config{
+			SlowThreshold:	time.Second,  	// Slow SQL threshold
+			LogLevel:       level,   		// Log level
+			Colorful:       true,           // Enable color
+		},
+	)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: newLogger})
 
 	if err != nil {
 		log.Fatalf("error connecting to db %v", err)
