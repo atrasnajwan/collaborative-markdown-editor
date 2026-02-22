@@ -87,18 +87,26 @@ func (s *DefaultService) RenameDocument(ctx context.Context, docID uint64, userI
     }
 
 	collaborators, _ := s.repository.ListDocumentCollaborators(ctx, docID)
-	// Invalidate cache
-    for _, col := range collaborators {
-		if col.Role == "owner" {
-			// invalidate for owner
-			versionKey := fmt.Sprintf("user:%d:docs:version", userID)
-			s.cache.IncrementVersion(ctx, versionKey)
-		} else {
-			// shared document
-			sharedVersionKey := fmt.Sprintf("user:%d:docs:shared:version", col.UserID)
-			s.cache.IncrementVersion(ctx, sharedVersionKey)
+
+	// Submit to Worker Pool
+	s.workerPool.Submit(func(bgCtx context.Context) error {
+		// 5s timeout
+		timeoutCtx, cancel := context.WithTimeout(bgCtx, 5*time.Second)
+		defer cancel()
+		// Invalidate cache
+		for _, col := range collaborators {
+			var versionKey string
+            if col.Role == "owner" {
+                versionKey = fmt.Sprintf("user:%d:docs:version", col.UserID)
+            } else {
+				// shared document
+                versionKey = fmt.Sprintf("user:%d:docs:shared:version", col.UserID)
+            }
+            // invalidate
+            s.cache.IncrementVersion(timeoutCtx, versionKey)
 		}
-    }
+		return nil
+	})
 
     return doc, nil
 }
@@ -210,6 +218,39 @@ func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, docID uint64,
 	if err != nil {
 		return err
 	}
+
+	// Throttled Invalidation
+    s.workerPool.Submit(func(bgCtx context.Context) error {
+		timeoutCtx, cancel := context.WithTimeout(bgCtx, 10*time.Second)
+		defer cancel()
+		
+		// Use docID in the lock so edits to Doc A don't block invalidation for Doc B
+        lockKey := fmt.Sprintf("invalidation_cooldown:d:%d", docID)
+        
+        //  we only invalidate once every 1 minute per document
+        isNew, _ := s.cache.SetNX(timeoutCtx, lockKey, "1", time.Minute)
+        
+        if isNew {
+			collaborators, err := s.repository.ListDocumentCollaborators(timeoutCtx, docID)
+			if err != nil {
+				return err
+			}
+
+			for _, col := range collaborators {
+				var versionKey string
+				if col.Role == "owner" {
+					versionKey = fmt.Sprintf("user:%d:docs:version", col.UserID)
+				} else {
+					// shared document
+					versionKey = fmt.Sprintf("user:%d:docs:shared:version", col.UserID)
+				}
+				// invalidate
+				s.cache.IncrementVersion(timeoutCtx, versionKey)
+			}
+
+        }
+        return nil
+    })
 
 	if s.shouldSnapshot(ctx, docID) {
 		// run on the background
@@ -556,24 +597,25 @@ func (s *DefaultService) DeleteDocument(ctx context.Context, docID uint64, userI
 		return err
 	}
 
-	// Invalidate cache
-    for _, col := range collaborators {
-		if col.Role == "owner" {
-			// invalidate for owner
-			versionKey := fmt.Sprintf("user:%d:docs:version", userID)
-			s.cache.IncrementVersion(ctx, versionKey)
-		} else {
-			// shared document
-			sharedVersionKey := fmt.Sprintf("user:%d:docs:shared:version", col.UserID)
-			s.cache.IncrementVersion(ctx, sharedVersionKey)
-		}
-    }
-
+	
 	// Submit to Worker Pool
 	s.workerPool.Submit(func(bgCtx context.Context) error {
-		// 5s timeout
-		timeoutCtx, cancel := context.WithTimeout(bgCtx, 5*time.Second)
+		// 10s timeout
+		timeoutCtx, cancel := context.WithTimeout(bgCtx, 10*time.Second)
 		defer cancel()
+		
+		// Invalidate cache
+		for _, col := range collaborators {
+			var versionKey string
+            if col.Role == "owner" {
+                versionKey = fmt.Sprintf("user:%d:docs:version", col.UserID)
+            } else {
+				// shared document
+                versionKey = fmt.Sprintf("user:%d:docs:shared:version", col.UserID)
+            }
+            // invalidate
+            s.cache.IncrementVersion(timeoutCtx, versionKey)
+		}
 
 		// send update to sync-server
 		return s.syncClient.RemoveDocument(
