@@ -5,6 +5,7 @@ import (
 	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -127,21 +128,32 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	// Set refresh token as HttpOnly cookie
-	c.SetCookie(
-		"refresh_token",
-		refreshToken,
-		7*24*3600,
-		"/",
-		"",
-		config.AppConfig.Environment == "production",  // Secure
-		true,  // HttpOnly
-	)
+	// Set refresh token in cookie
+	setAuthCookie(c, refreshToken)
 
 	c.JSON(http.StatusOK, gin.H{
 		"access_token":	accessToken,
 		"user": 		user.ToSafeUser(),
 	})
+}
+
+func setAuthCookie(c *gin.Context, refreshToken string) {
+    isProd := config.AppConfig.Environment == "production"
+    maxAge := 7 * 24 * 3600
+    
+    // We must use SameSite=None for Partitioned cookies to work cross-site
+    cookieValue := fmt.Sprintf("refresh_token=%s; Max-Age=%d; Path=/; HttpOnly", refreshToken, maxAge)
+
+    if isProd {
+        // Append Secure, SameSite=None, and Partitioned for Production
+        // Partitioned REQUIRES the Secure attribute
+        cookieValue += "; Secure; SameSite=None; Partitioned"
+    } else {
+        cookieValue += "; SameSite=Lax"
+    }
+
+    // set the header manually
+    c.Writer.Header().Set("Set-Cookie", cookieValue)
 }
 
 func (h *Handler) RefreshToken(c *gin.Context) {

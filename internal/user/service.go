@@ -78,7 +78,7 @@ func (s *DefaultService) UpdateUser(ctx context.Context, userID uint64, req Upda
         }
         return domain.SafeUser{}, err
     }
-
+	// TODO invalidate shared document
     return user.ToSafeUser(), nil
 }
 
