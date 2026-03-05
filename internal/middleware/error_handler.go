@@ -3,7 +3,8 @@ package middleware
 import (
 	apiError "collaborative-markdown-editor/internal/errors"
 	"errors"
-	"log"
+
+	log "github.com/rs/zerolog/log"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,9 +16,9 @@ func ErrorHandler() gin.HandlerFunc {
 		// detect any errors
 		if len(c.Errors) > 0 {
 			err := c.Errors.Last().Err
-			
+
 			var apiErr *apiError.APIError
-			
+
 			// if it's our custom APIError
 			if !errors.As(err, &apiErr) {
 				// If it's a raw error we didn't wrap, treat as Internal
@@ -26,9 +27,9 @@ func ErrorHandler() gin.HandlerFunc {
 
 			// LOGGING
 			if apiErr.Status >= 500 {
-				log.Printf("[ERROR] %v\n", apiErr.Internal)
+				log.Error().Err(apiErr.Internal).Msg("internal error")
 			} else {
-				log.Printf("[INFO] %s: %v\n", apiErr.Message, apiErr.Internal)
+				log.Info().Err(apiErr.Internal).Msg(apiErr.Message)
 			}
 
 			// Respond with JSON

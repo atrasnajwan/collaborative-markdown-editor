@@ -4,8 +4,9 @@ import (
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/user"
 	"context"
-	"log"
 	"time"
+
+	log "github.com/rs/zerolog/log"
 )
 
 // Migrate runs database migrations
@@ -20,7 +21,7 @@ func Migrate() {
 	)
 
 	if err != nil {
-		log.Fatal(err)	
+		log.Fatal().Err(err).Msg("migration failed")
 	}
 
 	// db indexes
@@ -32,18 +33,18 @@ func Migrate() {
 		`CREATE INDEX IF NOT EXISTS idx_snapshots_doc_seq ON document_snapshots (document_id, seq DESC);`,
 	}
 	err = RunSQL(statements)
-	
+
 	if err != nil {
-        log.Fatal(err)
-    }
-	log.Println("Database schema migrated successfully")
+		log.Fatal().Err(err).Msg("error running additional SQL statements")
+	}
+	log.Info().Msg("Database schema migrated successfully")
 }
 
 // SeedData seeds the database with initial data (for development only)
 func SeedData() {
 	// Create a test user if it doesn't exist
 	userRepo := user.NewRepository(AppDb)
-	
+
 	testUser := &domain.User{
 		Name:     "Test User",
 		Email:    "test@example.com",
@@ -53,7 +54,7 @@ func SeedData() {
 
 	// 1 minute to finish seeding
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-    defer cancel()
+	defer cancel()
 
 	// Check if user exists
 	_, err := userRepo.FindByEmail(ctx, testUser.Email)
@@ -61,20 +62,20 @@ func SeedData() {
 		userService := user.NewService(userRepo, nil)
 		// User doesn't exist, create it
 		if err := userService.Register(ctx, testUser); err != nil {
-			log.Printf("Error creating test user: %v", err)
+			log.Error().Err(err).Msg("Error creating test user")
 		} else {
-			log.Printf("Created test user: %s", testUser.Email)
+			log.Info().Str("email", testUser.Email).Msg("Created test user")
 		}
 	} else {
-		log.Printf("Test user already exists: %s", testUser.Email)
+		log.Info().Str("email", testUser.Email).Msg("Test user already exists")
 	}
 }
 
 func RunSQL(queries []string) error {
-    for _, q := range queries {
-        if err := AppDb.Exec(q).Error; err != nil {
-            return err
-        }
-    }
-    return nil
+	for _, q := range queries {
+		if err := AppDb.Exec(q).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }

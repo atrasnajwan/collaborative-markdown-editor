@@ -499,6 +499,10 @@ cp .env.example .env
 ./run-dev.sh
 ```
 
+
+**Internal gRPC service**
+Port configurable with \`GRPC_PORT\` (default 9090). Uses same \`INTERNAL_SECRET\` as HTTP endpoints.
+
 Or manually:
 ```bash
 go run cmd/server/main.go
