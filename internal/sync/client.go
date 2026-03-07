@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"collaborative-markdown-editor/internal/config"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,7 +31,7 @@ func NewSyncClient() *SyncClient {
 	}
 }
 
-func (s *SyncClient) doRequest(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+func (s *SyncClient) doRequest(ctx context.Context, method, path string, headers map[string]string, body interface{}) (*http.Response, error) {
 	var bodyReader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -48,8 +47,11 @@ func (s *SyncClient) doRequest(ctx context.Context, method, path string, body in
 		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	// set headers
 	req.Header.Set("X-Internal-Secret", config.AppConfig.SyncServerSecret)
+	for key, val := range headers {
+		req.Header.Set(key, val)
+	}
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -65,25 +67,27 @@ func (s *SyncClient) doRequest(ctx context.Context, method, path string, body in
 	return resp, nil
 }
 
-type StateResponse struct {
-	Binary string `json:"binary"`
-}
 
 // GET /internal/documents/:id/state
 func (s *SyncClient) FetchDocumentState(ctx context.Context, docID uint64) ([]byte, error) {
 	path := fmt.Sprintf("/internal/documents/%d/state", docID)
-	resp, err := s.doRequest(ctx, http.MethodGet, path, nil)
+	headers := map[string]string{
+		"Content-Type": "application/octet-stream",
+	}
+	resp, err := s.doRequest(ctx, http.MethodGet, path, headers, nil)
 	if err != nil {
 		log.Error().Err(err).Uint64("doc_id", docID).Msg("failed to get last state from sync server")
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	var payload StateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	state, err := io.ReadAll(resp.Body)
+	if err != nil || len(state) == 0 {
+		log.Error().Err(err).Uint64("doc_id", docID).Msg("Can't read doc state or empty state")
 		return nil, err
 	}
-	return base64.StdEncoding.DecodeString(payload.Binary)
+
+	return state, nil
 }
 
 type UpdateRequest struct {
@@ -95,8 +99,11 @@ type UpdateRequest struct {
 func (s *SyncClient) UpdateUserPermission(ctx context.Context, docID, userID uint64, role string) error {
 	path := fmt.Sprintf("/internal/documents/%d/permission", docID)
 	payload := UpdateRequest{userID, role}
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
 
-	resp, err := s.doRequest(ctx, http.MethodPut, path, payload)
+	resp, err := s.doRequest(ctx, http.MethodPut, path, headers, payload)
 	if err != nil {
 		log.Error().Err(err).Uint64("user_id", userID).Uint64("doc_id", docID).Msg("failed to notify sync server of permission change")
 		return err
@@ -108,7 +115,11 @@ func (s *SyncClient) UpdateUserPermission(ctx context.Context, docID, userID uin
 // DELETE /internal/documents/:id
 func (s *SyncClient) RemoveDocument(ctx context.Context, docID uint64) error {
 	path := fmt.Sprintf("/internal/documents/%d", docID)
-	resp, err := s.doRequest(ctx, http.MethodDelete, path, nil)
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+
+	resp, err := s.doRequest(ctx, http.MethodDelete, path, headers, nil)
 	if err != nil {
 		log.Error().Err(err).Uint64("doc_id", docID).Msg("failed to notify sync server document removed")
 		return err
