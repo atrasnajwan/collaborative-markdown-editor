@@ -2,9 +2,10 @@ package worker
 
 import (
 	"context"
-	"log"
 	"sync"
 	"sync/atomic"
+
+	log "github.com/rs/zerolog/log"
 )
 
 // Task is a function that represents a background job
@@ -33,28 +34,28 @@ func NewWorkerPool(size int) *WorkerPool {
 func (wp *WorkerPool) startWorker() {
 	defer wp.wg.Done() // signal when worker finished
 	for task := range wp.taskQueue {
-		ctx := context.Background() 
+		ctx := context.Background()
 		if err := task(ctx); err != nil { // run task
-			log.Printf("Worker task failed: %v", err)
+			log.Error().Err(err).Msg("Worker task failed")
 		}
 	}
 }
 
 func (wp *WorkerPool) Submit(t Task) {
 	if wp.isClosing.Load() {
-        log.Println("Warning: task submitted during shutdown, dropping.")
-        return
-    }
+		log.Warn().Msg("task submitted during shutdown, dropping")
+		return
+	}
 	select {
-		case wp.taskQueue <- t: // send task to worker pool 
-		default:
-			log.Println("Task queue full, dropping task!")
+	case wp.taskQueue <- t: // send task to worker pool
+	default:
+		log.Warn().Msg("Task queue full, dropping task")
 	}
 }
 
 // Shutdown closes the queue and waits for workers to finish
 func (wp *WorkerPool) Shutdown() {
 	wp.isClosing.Store(true)
-    close(wp.taskQueue) // Stop accepting new tasks
-    wp.wg.Wait()        // Wait for all active workers to finish tasks
+	close(wp.taskQueue) // Stop accepting new tasks
+	wp.wg.Wait()        // Wait for all active workers to finish tasks
 }

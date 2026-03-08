@@ -6,7 +6,7 @@ import (
 	"collaborative-markdown-editor/redis"
 	"context"
 	"fmt"
-	"log"
+	log "github.com/rs/zerolog/log"
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
@@ -128,7 +128,7 @@ func (s *DefaultService) Login(ctx context.Context, email, password string) (*do
 func (s *DefaultService) Logout(ctx context.Context, userID uint64) {
 	err := s.repository.UpdateTokenVersion(ctx, userID)
 	if err != nil {
-		log.Printf("%v\n", err.Error())
+		log.Error().Err(err).Msg("")
 	}
 	// invalidate cache/redis
 	cacheKey := fmt.Sprintf("user:version:%d", userID)

@@ -1,21 +1,23 @@
 package config
 
 import (
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
-	
+
+	log "github.com/rs/zerolog/log"
+
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
 	// Server configuration
-	ServerPort  string
-	Environment string
+	ServerPort     string
+	GRPCPort       string
+	Environment    string
 	WorkerPollSize int
-	
+
 	// Database configuration
 	DBHost     string
 	DBPort     string
@@ -24,15 +26,16 @@ type Config struct {
 	DBName     string
 
 	// Redis configuration
-	RedisAddress string
+	RedisAddress  string
 	RedisPollSize int
 
 	// JWT configuration
 	JWTSecret string
 
 	// Sync server config
-	SyncServerAddress string
-	SyncServerSecret string
+	SyncServerAddress     string
+	SyncServerGRPCAddress string // when set, use gRPC client instead of HTTP
+	SyncServerSecret      string
 
 	// internal secret used for communication between server
 	InternalSecret string
@@ -60,7 +63,7 @@ func LoadConfig() {
 	// Load .env file if it exists
 	if _, err := os.Stat(envPath); err == nil {
 		if err := godotenv.Load(envPath); err != nil {
-			log.Printf("Warning: Error loading .env file: %v\n", err)
+			log.Warn().Err(err).Msg("Error loading .env file")
 		}
 	}
 
@@ -68,26 +71,28 @@ func LoadConfig() {
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		jwtSecret = generateRandomSecret(32) // Generate a 32-byte random secret if not declared
-		log.Println("Generated random JWT secret")
+		log.Info().Msg("Generated random JWT secret")
 	}
 
 	AppConfig = Config{
-		ServerPort:        			getEnv("PORT", "8080"),
-		Environment:       			getEnv("ENV", "development"),
-		DBHost:            			getEnv("DB_HOST", "localhost"),
-		DBPort:            			getEnv("DB_PORT", "5432"),
-		DBUser:            			getEnv("DB_USER", "postgres"),
-		DBPassword:        			getEnv("DB_PASSWORD", "postgres"),
-		DBName:            			getEnv("DB_NAME", "markdown_editor"),
-		RedisAddress:      			getEnv("REDIS_ADDRESS", "localhost:6379"),
-		RedisPollSize:      		getEnv("REDIS_POOL_SIZE", 10),
-		DocumentSnapshotThreshold:	getEnv("SNAPSHOT_THRESHOLD", 200), // will snapshot document every X updates
-		SyncServerAddress: 			getEnv("SYNC_ADDRESS", "http://localhost:8787"),
-		SyncServerSecret:  			getEnv("SYNC_SECRET", "collab-sync-secret"),
-		JWTSecret:         			jwtSecret,
-		InternalSecret:    			getEnv("INTERNAL_SECRET", "collab-internal-secret"),
-		FrontendAddress:   			getEnv("FRONTEND_ADDRESS", "https://production-frontend.com"),
-		WorkerPollSize:      		getEnv("WORKER_POOL_SIZE", 5),
+		ServerPort:                getEnv("PORT", "8080"),
+		GRPCPort:                  getEnv("GRPC_PORT", "9090"),
+		Environment:               getEnv("ENV", "development"),
+		DBHost:                    getEnv("DB_HOST", "localhost"),
+		DBPort:                    getEnv("DB_PORT", "5432"),
+		DBUser:                    getEnv("DB_USER", "postgres"),
+		DBPassword:                getEnv("DB_PASSWORD", "postgres"),
+		DBName:                    getEnv("DB_NAME", "markdown_editor"),
+		RedisAddress:              getEnv("REDIS_ADDRESS", "localhost:6379"),
+		RedisPollSize:             getEnv("REDIS_POOL_SIZE", 10),
+		DocumentSnapshotThreshold: getEnv("SNAPSHOT_THRESHOLD", 200), // will snapshot document every X updates
+		SyncServerAddress:         getEnv("SYNC_ADDRESS", "http://localhost:8787"),
+		SyncServerGRPCAddress:     getEnv("SYNC_GRPC_ADDRESS", ""),
+		SyncServerSecret:          getEnv("SYNC_SECRET", "collab-sync-secret"),
+		JWTSecret:                 jwtSecret,
+		InternalSecret:            getEnv("INTERNAL_SECRET", "collab-internal-secret"),
+		FrontendAddress:           getEnv("FRONTEND_ADDRESS", "https://production-frontend.com"),
+		WorkerPollSize:            getEnv("WORKER_POOL_SIZE", 5),
 	}
 }
 

@@ -11,12 +11,17 @@ import (
 	"collaborative-markdown-editor/redis"
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	grpcserver "collaborative-markdown-editor/internal/grpc"
+
+	logger "collaborative-markdown-editor/internal/logger"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -25,6 +30,8 @@ import (
 func main() {
 	// Load configuration
 	config.LoadConfig()
+	// init logger
+	logger.Init(config.AppConfig.Environment)
 
 	// Connect to database
 	db.ConnectDb()
@@ -49,6 +56,10 @@ func main() {
 	// Initialize service
 	userService := user.NewService(userRepo, redisCache)
 	syncClient := sync.NewSyncClient()
+	defer func() {
+		_ = syncClient.Close()
+	}()
+
 	docService := document.NewService(
 		docRepo,
 		userService,
@@ -62,9 +73,9 @@ func main() {
 	userHandler := user.NewHandler(userService)
 	// Initialize middleware
 	authMiddleware := &middleware.Auth{
-		UserService: userService,
+		UserService:    userService,
 		InternalSecret: config.AppConfig.InternalSecret,
-		Cache: redisCache,
+		Cache:          redisCache,
 	}
 
 	// Initialize Gin router
@@ -76,7 +87,7 @@ func main() {
 	router.Use(gin.LoggerWithConfig(gin.LoggerConfig{
 		SkipPaths: []string{"/healthz", "/readyz"},
 	}))
-	
+
 	// cors setting
 	corsConfig := cors.Config{
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -94,10 +105,10 @@ func main() {
 	}
 	router.Use(cors.New(corsConfig))
 
-    // System Routes
+	// System Routes
 	system := router.Group("/")
 	system.GET("/healthz", func(c *gin.Context) {
-		c.Status(http.StatusOK) 
+		c.Status(http.StatusOK)
 	})
 	system.GET("/readyz", func(c *gin.Context) {
 		if sqlDB, err := db.AppDb.DB(); err != nil || sqlDB.Ping() != nil {
@@ -145,30 +156,45 @@ func main() {
 		Handler: router.Handler(),
 	}
 
-	// Start server
+	// Start HTTP server
 	go func() {
-		log.Printf("Server listening on port %s", serverPort)
+		log.Info().Msgf("HTTP server listening on port %s", serverPort)
 		err := server.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed to start: %v", err)
+			log.Fatal().Err(err).Msg("HTTP server failed to start")
 		}
 	}()
+
+	// start gRPC server for internal endpoints
+	grpcSrv := grpcserver.NewServer(docService, config.AppConfig.InternalSecret)
+	grpcAddr := fmt.Sprintf(":%s", config.AppConfig.GRPCPort)
+	log.Info().Msgf("gRPC server listening on port %s", config.AppConfig.GRPCPort)
+	serverInstance, _, err := grpcSrv.Start(grpcAddr)
+	if err != nil {
+		log.Fatal().Err(err).Msg("gRPC server failed to start")
+	}
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit // block until signal received
-	log.Println("Shutting down server...")
+	log.Info().Msg("Shutting down server...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Println("Server shutdown error:", err)
+		log.Error().Err(err).Msg("HTTP server shutdown error")
 	}
 
-	log.Println("Finishing background tasks...")
-    wp.Shutdown()
+	// stop grpc with graceful shutdown; it will finish in-flight RPCs
+	if serverInstance != nil {
+		log.Info().Msg("Shutting down gRPC server")
+		serverInstance.GracefulStop()
+	}
 
-	log.Println("Server shutdown complete")
+	log.Info().Msg("Finishing background tasks...")
+	wp.Shutdown()
+
+	log.Info().Msg("Server shutdown complete")
 }
