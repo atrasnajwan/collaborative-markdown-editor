@@ -21,47 +21,12 @@ A real-time collaborative markdown editor backend built with Go. It provides aut
 
 - **Language**: Go 1.24.2
 - **Framework**: Gin (HTTP web framework)
+- **gRPC / Protobuf**: internal service and optional sync server transport
 - **Database**: PostgreSQL with GORM ORM
 - **Cache**: Redis (optional)
 - **Authentication**: JWT (JSON Web Tokens)
 - **Testing**: testify/mock, testify/assert
-
-## Project Structure
-
-```
-.
-├── cmd/
-│   └── server/
-│       └── main.go         # Application entry point
-├── internal/
-|   ├── auth/            
-│   |   └── jwt.go              # JWT token generation and verification
-│   ├── config/
-│   │   └── config.go       # Configuration management
-│   ├── db/
-│   │   ├── db.go           # Database connection
-│   │   └── migrate.go      # Database migrations
-│   ├── document/           # Document domain
-│   │   ├── handler.go
-│   │   ├── handler_test.go
-│   │   ├── repository.go
-│   │   └── service.go
-│   ├── domain/             # Domain models
-│   │   ├── document.go
-│   │   └── user.go
-│   ├── middleware/
-|   |   |── auth.go         # Authentication middleware
-│   │   └── error_handler.go # Error handling
-│   ├── sync/               # External sync server client
-│   │   └── client.go
-│   └── user/               # User domain
-│       ├── handler.go
-│       ├── handler_test.go
-│       ├── repository.go
-│       └── service.go
-├── go.mod
-└── README.md
-```
+- **Logging**: zerolog
 
 ## API Endpoints
 
@@ -390,7 +355,9 @@ Response:
 
 ### Internal Routes (Sync Server)
 
-These endpoints are protected by internal secret authentication via `X-Internal-Secret` header.
+These HTTP endpoints are protected by the internal secret (header
+`X-Internal-Secret`) and are primarily used by the external sync server for
+state hydration and update persistence.
 
 ```
 GET /internal/documents/:id/permission?user_id=<user_id>
@@ -434,6 +401,36 @@ X-Internal-Secret: <internal_secret>
 Response: No Content (204)
 ```
 
+---
+
+### Internal gRPC Service
+
+In addition to HTTP, the application exposes a gRPC service that mirrors the
+same internal functionality.  The service implementation lives under
+`internal/grpc` and uses the protobuf definitions in
+`internal/grpc/internalpb/internal.proto`.
+
+The gRPC server listens on the port defined by `GRPC_PORT` (default `9090`).
+Every request must include the internal secret as metadata (key
+`x-internal-secret`). 
+
+Example using `grpcurl`:
+```bash
+grpcurl -d '{"docId":1,"userId":2}' \
+  -rpc-header x-internal-secret:your_internal_secret \
+  localhost:9090 collaborative.markdown.internal.InternalService/GetUserRole
+```
+
+Supported methods:
+
+- `GetUserRole(PermissionRequest) returns (PermissionResponse)`
+- `GetDocumentState(DocumentIDRequest) returns (DocumentStateResponse)`
+- `CreateUpdate(UpdateRequest) returns (google.protobuf.Empty)`
+- `CreateSnapshot(SnapshotRequest) returns (google.protobuf.Empty)`
+
+Feel free to generate clients using the `gen-internal-proto.sh` script when
+modifying the proto definitions.
+
 ## Environment Variables
 
 Create a `.env` file in the root directory (see `.env.example` for a complete
@@ -468,6 +465,9 @@ SYNC_SECRET=your_sync_secret
 
 # Internal Communication
 INTERNAL_SECRET=your_internal_secret
+
+# Background Workers
+WORKER_POOL_SIZE=5          # size of background worker pool (see `internal/worker`)
 
 SNAPSHOT_THRESHOLD=200
 ```
