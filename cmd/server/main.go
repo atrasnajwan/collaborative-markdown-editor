@@ -56,6 +56,10 @@ func main() {
 	// Initialize service
 	userService := user.NewService(userRepo, redisCache)
 	syncClient := sync.NewSyncClient()
+	defer func() {
+		_ = syncClient.Close()
+	}()
+
 	docService := document.NewService(
 		docRepo,
 		userService,

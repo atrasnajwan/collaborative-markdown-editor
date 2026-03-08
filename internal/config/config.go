@@ -1,11 +1,12 @@
 package config
 
 import (
-	log "github.com/rs/zerolog/log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
+
+	log "github.com/rs/zerolog/log"
 
 	"github.com/joho/godotenv"
 )
@@ -32,8 +33,9 @@ type Config struct {
 	JWTSecret string
 
 	// Sync server config
-	SyncServerAddress string
-	SyncServerSecret  string
+	SyncServerAddress     string
+	SyncServerGRPCAddress string // when set, use gRPC client instead of HTTP
+	SyncServerSecret      string
 
 	// internal secret used for communication between server
 	InternalSecret string
@@ -85,6 +87,7 @@ func LoadConfig() {
 		RedisPollSize:             getEnv("REDIS_POOL_SIZE", 10),
 		DocumentSnapshotThreshold: getEnv("SNAPSHOT_THRESHOLD", 200), // will snapshot document every X updates
 		SyncServerAddress:         getEnv("SYNC_ADDRESS", "http://localhost:8787"),
+		SyncServerGRPCAddress:     getEnv("SYNC_GRPC_ADDRESS", ""),
 		SyncServerSecret:          getEnv("SYNC_SECRET", "collab-sync-secret"),
 		JWTSecret:                 jwtSecret,
 		InternalSecret:            getEnv("INTERNAL_SECRET", "collab-internal-secret"),

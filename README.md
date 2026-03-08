@@ -436,13 +436,15 @@ Response: No Content (204)
 
 ## Environment Variables
 
-Create a `.env` file in the root directory:
+Create a `.env` file in the root directory (see `.env.example` for a complete
+reference):
 
 ```env
 # Server
+GRPC_PORT=9090              # port for internal gRPC service
 PORT=8080
 ENV=development
-WORKER_POOL_SIZE=5
+WORKER_POOL_SIZE=5          # size of background worker pool (see `internal/worker`)
 
 # Database
 DB_HOST=localhost
@@ -459,7 +461,9 @@ REDIS_POOL_SIZE=10
 JWT_SECRET=your_jwt_secret_key
 
 # Sync Server
-SYNC_ADDRESS=http://localhost:8787
+SYNC_ADDRESS=http://localhost:8787   # HTTP address of the external sync server (default)
+SYNC_GRPC_ADDRESS=                # optional gRPC endpoint for sync server
+                                   # uses `internal/sync/syncpb/sync.proto` definition
 SYNC_SECRET=your_sync_secret
 
 # Internal Communication
@@ -467,6 +471,17 @@ INTERNAL_SECRET=your_internal_secret
 
 SNAPSHOT_THRESHOLD=200
 ```
+
+**Protobuf generation**
+
+If you ever change one of the protocol definitions, run the appropriate
+helper script in the root of the repository:
+
+```bash
+./scripts/gen-sync-proto.sh      # sync server protobufs
+./scripts/gen-internal-proto.sh  # internal gRPC protobufs
+```
+
 
 ## Getting Started
 

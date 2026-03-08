@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.28.1
 // 	protoc        v3.21.12
-// source: internal/internal.proto
+// source: internal/grpc/internalpb/internal.proto
 
 package internalpb
 
@@ -32,7 +32,7 @@ type DocumentIDRequest struct {
 func (x *DocumentIDRequest) Reset() {
 	*x = DocumentIDRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_internal_internal_proto_msgTypes[0]
+		mi := &file_internal_grpc_internalpb_internal_proto_msgTypes[0]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -45,7 +45,7 @@ func (x *DocumentIDRequest) String() string {
 func (*DocumentIDRequest) ProtoMessage() {}
 
 func (x *DocumentIDRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_internal_proto_msgTypes[0]
+	mi := &file_internal_grpc_internalpb_internal_proto_msgTypes[0]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -58,7 +58,7 @@ func (x *DocumentIDRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DocumentIDRequest.ProtoReflect.Descriptor instead.
 func (*DocumentIDRequest) Descriptor() ([]byte, []int) {
-	return file_internal_internal_proto_rawDescGZIP(), []int{0}
+	return file_internal_grpc_internalpb_internal_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *DocumentIDRequest) GetId() uint64 {
@@ -80,7 +80,7 @@ type PermissionRequest struct {
 func (x *PermissionRequest) Reset() {
 	*x = PermissionRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_internal_internal_proto_msgTypes[1]
+		mi := &file_internal_grpc_internalpb_internal_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -93,7 +93,7 @@ func (x *PermissionRequest) String() string {
 func (*PermissionRequest) ProtoMessage() {}
 
 func (x *PermissionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_internal_proto_msgTypes[1]
+	mi := &file_internal_grpc_internalpb_internal_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -106,7 +106,7 @@ func (x *PermissionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PermissionRequest.ProtoReflect.Descriptor instead.
 func (*PermissionRequest) Descriptor() ([]byte, []int) {
-	return file_internal_internal_proto_rawDescGZIP(), []int{1}
+	return file_internal_grpc_internalpb_internal_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *PermissionRequest) GetDocId() uint64 {
@@ -134,7 +134,7 @@ type PermissionResponse struct {
 func (x *PermissionResponse) Reset() {
 	*x = PermissionResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_internal_internal_proto_msgTypes[2]
+		mi := &file_internal_grpc_internalpb_internal_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -147,7 +147,7 @@ func (x *PermissionResponse) String() string {
 func (*PermissionResponse) ProtoMessage() {}
 
 func (x *PermissionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_internal_proto_msgTypes[2]
+	mi := &file_internal_grpc_internalpb_internal_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -160,7 +160,7 @@ func (x *PermissionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PermissionResponse.ProtoReflect.Descriptor instead.
 func (*PermissionResponse) Descriptor() ([]byte, []int) {
-	return file_internal_internal_proto_rawDescGZIP(), []int{2}
+	return file_internal_grpc_internalpb_internal_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *PermissionResponse) GetRole() string {
@@ -182,7 +182,7 @@ type DocumentUpdate struct {
 func (x *DocumentUpdate) Reset() {
 	*x = DocumentUpdate{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_internal_internal_proto_msgTypes[3]
+		mi := &file_internal_grpc_internalpb_internal_proto_msgTypes[3]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -195,7 +195,7 @@ func (x *DocumentUpdate) String() string {
 func (*DocumentUpdate) ProtoMessage() {}
 
 func (x *DocumentUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_internal_proto_msgTypes[3]
+	mi := &file_internal_grpc_internalpb_internal_proto_msgTypes[3]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -208,7 +208,7 @@ func (x *DocumentUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DocumentUpdate.ProtoReflect.Descriptor instead.
 func (*DocumentUpdate) Descriptor() ([]byte, []int) {
-	return file_internal_internal_proto_rawDescGZIP(), []int{3}
+	return file_internal_grpc_internalpb_internal_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *DocumentUpdate) GetSeq() uint64 {
@@ -238,7 +238,7 @@ type DocumentStateResponse struct {
 func (x *DocumentStateResponse) Reset() {
 	*x = DocumentStateResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_internal_internal_proto_msgTypes[4]
+		mi := &file_internal_grpc_internalpb_internal_proto_msgTypes[4]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -251,7 +251,7 @@ func (x *DocumentStateResponse) String() string {
 func (*DocumentStateResponse) ProtoMessage() {}
 
 func (x *DocumentStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_internal_proto_msgTypes[4]
+	mi := &file_internal_grpc_internalpb_internal_proto_msgTypes[4]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -264,7 +264,7 @@ func (x *DocumentStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DocumentStateResponse.ProtoReflect.Descriptor instead.
 func (*DocumentStateResponse) Descriptor() ([]byte, []int) {
-	return file_internal_internal_proto_rawDescGZIP(), []int{4}
+	return file_internal_grpc_internalpb_internal_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *DocumentStateResponse) GetSnapshot() []byte {
@@ -301,7 +301,7 @@ type UpdateRequest struct {
 func (x *UpdateRequest) Reset() {
 	*x = UpdateRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_internal_internal_proto_msgTypes[5]
+		mi := &file_internal_grpc_internalpb_internal_proto_msgTypes[5]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -314,7 +314,7 @@ func (x *UpdateRequest) String() string {
 func (*UpdateRequest) ProtoMessage() {}
 
 func (x *UpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_internal_proto_msgTypes[5]
+	mi := &file_internal_grpc_internalpb_internal_proto_msgTypes[5]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -327,7 +327,7 @@ func (x *UpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateRequest.ProtoReflect.Descriptor instead.
 func (*UpdateRequest) Descriptor() ([]byte, []int) {
-	return file_internal_internal_proto_rawDescGZIP(), []int{5}
+	return file_internal_grpc_internalpb_internal_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *UpdateRequest) GetDocId() uint64 {
@@ -363,7 +363,7 @@ type SnapshotRequest struct {
 func (x *SnapshotRequest) Reset() {
 	*x = SnapshotRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_internal_internal_proto_msgTypes[6]
+		mi := &file_internal_grpc_internalpb_internal_proto_msgTypes[6]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -376,7 +376,7 @@ func (x *SnapshotRequest) String() string {
 func (*SnapshotRequest) ProtoMessage() {}
 
 func (x *SnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_internal_proto_msgTypes[6]
+	mi := &file_internal_grpc_internalpb_internal_proto_msgTypes[6]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -389,7 +389,7 @@ func (x *SnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SnapshotRequest.ProtoReflect.Descriptor instead.
 func (*SnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_internal_internal_proto_rawDescGZIP(), []int{6}
+	return file_internal_grpc_internalpb_internal_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SnapshotRequest) GetDocId() uint64 {
@@ -406,10 +406,11 @@ func (x *SnapshotRequest) GetSnapshot() []byte {
 	return nil
 }
 
-var File_internal_internal_proto protoreflect.FileDescriptor
+var File_internal_grpc_internalpb_internal_proto protoreflect.FileDescriptor
 
-var file_internal_internal_proto_rawDesc = []byte{
-	0x0a, 0x17, 0x69, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x2f, 0x69, 0x6e, 0x74, 0x65, 0x72,
+var file_internal_grpc_internalpb_internal_proto_rawDesc = []byte{
+	0x0a, 0x27, 0x69, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x2f, 0x67, 0x72, 0x70, 0x63, 0x2f,
+	0x69, 0x6e, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x70, 0x62, 0x2f, 0x69, 0x6e, 0x74, 0x65, 0x72,
 	0x6e, 0x61, 0x6c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x0a, 0x69, 0x6e, 0x74, 0x65, 0x72,
 	0x6e, 0x61, 0x6c, 0x70, 0x62, 0x1a, 0x1b, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2f, 0x70, 0x72,
 	0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2f, 0x65, 0x6d, 0x70, 0x74, 0x79, 0x2e, 0x70, 0x72, 0x6f,
@@ -473,19 +474,19 @@ var file_internal_internal_proto_rawDesc = []byte{
 }
 
 var (
-	file_internal_internal_proto_rawDescOnce sync.Once
-	file_internal_internal_proto_rawDescData = file_internal_internal_proto_rawDesc
+	file_internal_grpc_internalpb_internal_proto_rawDescOnce sync.Once
+	file_internal_grpc_internalpb_internal_proto_rawDescData = file_internal_grpc_internalpb_internal_proto_rawDesc
 )
 
-func file_internal_internal_proto_rawDescGZIP() []byte {
-	file_internal_internal_proto_rawDescOnce.Do(func() {
-		file_internal_internal_proto_rawDescData = protoimpl.X.CompressGZIP(file_internal_internal_proto_rawDescData)
+func file_internal_grpc_internalpb_internal_proto_rawDescGZIP() []byte {
+	file_internal_grpc_internalpb_internal_proto_rawDescOnce.Do(func() {
+		file_internal_grpc_internalpb_internal_proto_rawDescData = protoimpl.X.CompressGZIP(file_internal_grpc_internalpb_internal_proto_rawDescData)
 	})
-	return file_internal_internal_proto_rawDescData
+	return file_internal_grpc_internalpb_internal_proto_rawDescData
 }
 
-var file_internal_internal_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
-var file_internal_internal_proto_goTypes = []interface{}{
+var file_internal_grpc_internalpb_internal_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_internal_grpc_internalpb_internal_proto_goTypes = []interface{}{
 	(*DocumentIDRequest)(nil),     // 0: internalpb.DocumentIDRequest
 	(*PermissionRequest)(nil),     // 1: internalpb.PermissionRequest
 	(*PermissionResponse)(nil),    // 2: internalpb.PermissionResponse
@@ -495,7 +496,7 @@ var file_internal_internal_proto_goTypes = []interface{}{
 	(*SnapshotRequest)(nil),       // 6: internalpb.SnapshotRequest
 	(*emptypb.Empty)(nil),         // 7: google.protobuf.Empty
 }
-var file_internal_internal_proto_depIdxs = []int32{
+var file_internal_grpc_internalpb_internal_proto_depIdxs = []int32{
 	3, // 0: internalpb.DocumentStateResponse.updates:type_name -> internalpb.DocumentUpdate
 	1, // 1: internalpb.InternalService.GetUserRole:input_type -> internalpb.PermissionRequest
 	0, // 2: internalpb.InternalService.GetDocumentState:input_type -> internalpb.DocumentIDRequest
@@ -512,13 +513,13 @@ var file_internal_internal_proto_depIdxs = []int32{
 	0, // [0:1] is the sub-list for field type_name
 }
 
-func init() { file_internal_internal_proto_init() }
-func file_internal_internal_proto_init() {
-	if File_internal_internal_proto != nil {
+func init() { file_internal_grpc_internalpb_internal_proto_init() }
+func file_internal_grpc_internalpb_internal_proto_init() {
+	if File_internal_grpc_internalpb_internal_proto != nil {
 		return
 	}
 	if !protoimpl.UnsafeEnabled {
-		file_internal_internal_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
+		file_internal_grpc_internalpb_internal_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*DocumentIDRequest); i {
 			case 0:
 				return &v.state
@@ -530,7 +531,7 @@ func file_internal_internal_proto_init() {
 				return nil
 			}
 		}
-		file_internal_internal_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
+		file_internal_grpc_internalpb_internal_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*PermissionRequest); i {
 			case 0:
 				return &v.state
@@ -542,7 +543,7 @@ func file_internal_internal_proto_init() {
 				return nil
 			}
 		}
-		file_internal_internal_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
+		file_internal_grpc_internalpb_internal_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*PermissionResponse); i {
 			case 0:
 				return &v.state
@@ -554,7 +555,7 @@ func file_internal_internal_proto_init() {
 				return nil
 			}
 		}
-		file_internal_internal_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+		file_internal_grpc_internalpb_internal_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*DocumentUpdate); i {
 			case 0:
 				return &v.state
@@ -566,7 +567,7 @@ func file_internal_internal_proto_init() {
 				return nil
 			}
 		}
-		file_internal_internal_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
+		file_internal_grpc_internalpb_internal_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*DocumentStateResponse); i {
 			case 0:
 				return &v.state
@@ -578,7 +579,7 @@ func file_internal_internal_proto_init() {
 				return nil
 			}
 		}
-		file_internal_internal_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
+		file_internal_grpc_internalpb_internal_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*UpdateRequest); i {
 			case 0:
 				return &v.state
@@ -590,7 +591,7 @@ func file_internal_internal_proto_init() {
 				return nil
 			}
 		}
-		file_internal_internal_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
+		file_internal_grpc_internalpb_internal_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*SnapshotRequest); i {
 			case 0:
 				return &v.state
@@ -607,18 +608,18 @@ func file_internal_internal_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: file_internal_internal_proto_rawDesc,
+			RawDescriptor: file_internal_grpc_internalpb_internal_proto_rawDesc,
 			NumEnums:      0,
 			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_internal_internal_proto_goTypes,
-		DependencyIndexes: file_internal_internal_proto_depIdxs,
-		MessageInfos:      file_internal_internal_proto_msgTypes,
+		GoTypes:           file_internal_grpc_internalpb_internal_proto_goTypes,
+		DependencyIndexes: file_internal_grpc_internalpb_internal_proto_depIdxs,
+		MessageInfos:      file_internal_grpc_internalpb_internal_proto_msgTypes,
 	}.Build()
-	File_internal_internal_proto = out.File
-	file_internal_internal_proto_rawDesc = nil
-	file_internal_internal_proto_goTypes = nil
-	file_internal_internal_proto_depIdxs = nil
+	File_internal_grpc_internalpb_internal_proto = out.File
+	file_internal_grpc_internalpb_internal_proto_rawDesc = nil
+	file_internal_grpc_internalpb_internal_proto_goTypes = nil
+	file_internal_grpc_internalpb_internal_proto_depIdxs = nil
 }

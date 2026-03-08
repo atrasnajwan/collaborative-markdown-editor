@@ -2,19 +2,30 @@ package sync
 
 import (
 	"bytes"
-	"collaborative-markdown-editor/internal/config"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
+	"collaborative-markdown-editor/internal/config"
+	"collaborative-markdown-editor/internal/sync/syncpb"
+
 	log "github.com/rs/zerolog/log"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+
+	"encoding/json"
 )
 
 type SyncClient struct {
 	httpClient *http.Client
+
+	// If grpcClient is non-nil we will use it instead of the HTTP helpers.
+	grpcConn   *grpc.ClientConn
+	grpcClient syncpb.SyncServerInternalClient
 }
 
 type Client interface {
@@ -24,11 +35,40 @@ type Client interface {
 }
 
 func NewSyncClient() *SyncClient {
-	return &SyncClient{
+	client := &SyncClient{
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
 	}
+
+	// if a GRPC address is explicitly provided we attempt to dial it and create a gRPC client
+	if addr := config.AppConfig.SyncServerGRPCAddress; addr != "" {
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		opts := []grpc.DialOption{
+			grpc.WithBlock(), // Must be present for initial dial
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		}
+		conn, err := grpc.DialContext(timeoutCtx, config.AppConfig.SyncServerGRPCAddress, opts...)
+
+		if err == nil {
+			client.grpcConn = conn
+			client.grpcClient = syncpb.NewSyncServerInternalClient(conn)
+		} else {
+			log.Warn().Err(err).Str("address", addr).Msg("failed to dial sync server gRPC, falling back to HTTP")
+		}
+	}
+
+	return client
+}
+
+// Close shuts down any underlying gRPC connection.
+func (s *SyncClient) Close() error {
+	if s.grpcConn != nil {
+		return s.grpcConn.Close()
+	}
+	return nil
 }
 
 func (s *SyncClient) doRequest(ctx context.Context, method, path string, headers map[string]string, body interface{}) (*http.Response, error) {
@@ -67,9 +107,24 @@ func (s *SyncClient) doRequest(ctx context.Context, method, path string, headers
 	return resp, nil
 }
 
-
 // GET /internal/documents/:id/state
 func (s *SyncClient) FetchDocumentState(ctx context.Context, docID uint64) ([]byte, error) {
+	if s.grpcClient != nil {
+		// use gRPC transport
+		md := metadata.Pairs("x-internal-secret", config.AppConfig.SyncServerSecret)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+		resp, err := s.grpcClient.GetState(ctx, &syncpb.DocumentIDRequest{Id: docID})
+		if err != nil {
+			log.Error().Err(err).Uint64("doc_id", docID).Msg("gRPC call to sync server failed")
+			return nil, err
+		}
+		if len(resp.State) == 0 {
+			log.Error().Uint64("doc_id", docID).Msg("gRPC sync server returned empty snapshot")
+			return nil, fmt.Errorf("empty state from sync server")
+		}
+		return resp.State, nil
+	}
+
 	path := fmt.Sprintf("/internal/documents/%d/state", docID)
 	headers := map[string]string{
 		"Content-Type": "application/octet-stream",
@@ -97,6 +152,16 @@ type UpdateRequest struct {
 
 // PUT /internal/documents/:id/permission
 func (s *SyncClient) UpdateUserPermission(ctx context.Context, docID, userID uint64, role string) error {
+	if s.grpcClient != nil {
+		md := metadata.Pairs("x-internal-secret", config.AppConfig.SyncServerSecret)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+		_, err := s.grpcClient.PermissionChanged(ctx, &syncpb.PermissionChangedRequest{DocId: docID, UserId: userID, Role: role})
+		if err != nil {
+			log.Error().Err(err).Uint64("user_id", userID).Uint64("doc_id", docID).Msg("gRPC notify sync server of permission change failed")
+		}
+		return err
+	}
+
 	path := fmt.Sprintf("/internal/documents/%d/permission", docID)
 	payload := UpdateRequest{userID, role}
 	headers := map[string]string{
@@ -114,6 +179,16 @@ func (s *SyncClient) UpdateUserPermission(ctx context.Context, docID, userID uin
 
 // DELETE /internal/documents/:id
 func (s *SyncClient) RemoveDocument(ctx context.Context, docID uint64) error {
+	if s.grpcClient != nil {
+		md := metadata.Pairs("x-internal-secret", config.AppConfig.SyncServerSecret)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+		_, err := s.grpcClient.DeleteDocument(ctx, &syncpb.DocumentIDRequest{Id: docID})
+		if err != nil {
+			log.Error().Err(err).Uint64("doc_id", docID).Msg("gRPC notify sync server document removed failed")
+		}
+		return err
+	}
+
 	path := fmt.Sprintf("/internal/documents/%d", docID)
 	headers := map[string]string{
 		"Content-Type": "application/json",
