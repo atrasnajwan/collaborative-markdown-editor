@@ -4,6 +4,7 @@ import (
 	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/db"
 	"collaborative-markdown-editor/internal/document"
+	"collaborative-markdown-editor/internal/kafka"
 	"collaborative-markdown-editor/internal/middleware"
 	"collaborative-markdown-editor/internal/sync"
 	"collaborative-markdown-editor/internal/user"
@@ -174,6 +175,15 @@ func main() {
 		log.Fatal().Err(err).Msg("gRPC server failed to start")
 	}
 
+	// Start Kafka consumer
+	kafkaConsumer, err := kafka.NewKafkaConsumer(wp, docService)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to create Kafka consumer")
+	}
+	go func() {
+		kafkaConsumer.Start()
+	}()
+
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -195,6 +205,12 @@ func main() {
 
 	log.Info().Msg("Finishing background tasks...")
 	wp.Shutdown()
+
+	log.Info().Msg("Closing kafka...")
+	err = kafkaConsumer.Close()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to close Kafka consumer")
+	}
 
 	log.Info().Msg("Server shutdown complete")
 }
