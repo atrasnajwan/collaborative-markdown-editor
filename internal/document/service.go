@@ -36,12 +36,12 @@ type UserProvider interface {
 }
 
 type DefaultService struct {
-	repository   		DocumentRepository
-	syncClient   		*sync.SyncClient
-	userProvider 		UserProvider
-	cache 				*redis.Cache
-	snapshotThreshold 	uint64
-	workerPool 			*worker.WorkerPool
+	repository        DocumentRepository
+	syncClient        *sync.SyncClient
+	userProvider      UserProvider
+	cache             *redis.Cache
+	snapshotThreshold uint64
+	workerPool        *worker.WorkerPool
 }
 
 func NewService(
@@ -53,12 +53,12 @@ func NewService(
 	wp *worker.WorkerPool,
 ) Service {
 	return &DefaultService{
-		repository:   		repository,
-		syncClient:   		syncClient,
-		userProvider: 		userProvider,
-		cache: 				cache,
-		snapshotThreshold: 	snapshotThreshold,
-		workerPool: 		wp,
+		repository:        repository,
+		syncClient:        syncClient,
+		userProvider:      userProvider,
+		cache:             cache,
+		snapshotThreshold: snapshotThreshold,
+		workerPool:        wp,
 	}
 }
 
@@ -67,24 +67,24 @@ func (s *DefaultService) CreateUserDocument(ctx context.Context, userID uint64, 
 	err := s.repository.Create(ctx, userID, document)
 	if err == nil {
 		// increase cache key, so any new fetch will get new version
-    	versionKey := fmt.Sprintf("user:%d:docs:version", userID)
-    	s.cache.IncrementVersion(ctx, versionKey)
+		versionKey := fmt.Sprintf("user:%d:docs:version", userID)
+		s.cache.IncrementVersion(ctx, versionKey)
 	}
 	return err
 }
 
 func (s *DefaultService) RenameDocument(ctx context.Context, docID uint64, userID uint64, title string) (*domain.Document, error) {
-    if title == "" {
-        return nil, errors.BadRequest("Title cannot be empty", nil)
-    }
+	if title == "" {
+		return nil, errors.BadRequest("Title cannot be empty", nil)
+	}
 
-    doc, err := s.repository.UpdateTitle(ctx, docID, userID, title)
-    if err != nil {
-        if defError.Is(err, gorm.ErrRecordNotFound) {
-            return nil, errors.NotFound("Document not found", err)
-        }
-        return nil, err
-    }
+	doc, err := s.repository.UpdateTitle(ctx, docID, userID, title)
+	if err != nil {
+		if defError.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.NotFound("Document not found", err)
+		}
+		return nil, err
+	}
 
 	collaborators, _ := s.repository.ListDocumentCollaborators(ctx, docID)
 
@@ -96,39 +96,39 @@ func (s *DefaultService) RenameDocument(ctx context.Context, docID uint64, userI
 		// Invalidate cache
 		for _, col := range collaborators {
 			var versionKey string
-            if col.Role == "owner" {
-                versionKey = fmt.Sprintf("user:%d:docs:version", col.UserID)
-            } else {
+			if col.Role == "owner" {
+				versionKey = fmt.Sprintf("user:%d:docs:version", col.UserID)
+			} else {
 				// shared document
-                versionKey = fmt.Sprintf("user:%d:docs:shared:version", col.UserID)
-            }
-            // invalidate
-            s.cache.IncrementVersion(timeoutCtx, versionKey)
+				versionKey = fmt.Sprintf("user:%d:docs:shared:version", col.UserID)
+			}
+			// invalidate
+			s.cache.IncrementVersion(timeoutCtx, versionKey)
 		}
 		return nil
 	})
 
-    return doc, nil
+	return doc, nil
 }
 
 type PaginatedDocuments struct {
-    Data []DocumentShowResponse `json:"data"`
-    Meta DocumentsMeta `json:"meta"`
+	Data []DocumentShowResponse `json:"data"`
+	Meta DocumentsMeta          `json:"meta"`
 }
 
 func (s *DefaultService) GetUserDocuments(ctx context.Context, userID uint64, page, pageSize int) (*PaginatedDocuments, error) {
 	// Get the current data version for this user's documents
-    versionKey := fmt.Sprintf("user:%d:docs:version", userID)
-    v := s.cache.GetVersion(ctx, versionKey)
+	versionKey := fmt.Sprintf("user:%d:docs:version", userID)
+	v := s.cache.GetVersion(ctx, versionKey)
 
 	cacheKey := fmt.Sprintf("docs:u:%d:v:%d:p:%d:ps:%d", userID, v, page, pageSize)
 
 	var result PaginatedDocuments
 	// get data from cache
-    found, _ := s.cache.Get(ctx, cacheKey, &result)
-    if found {
-        return &result, nil
-    }
+	found, _ := s.cache.Get(ctx, cacheKey, &result)
+	if found {
+		return &result, nil
+	}
 
 	documents, meta, err := s.repository.ListDocumentByUserID(ctx, userID, page, pageSize)
 	if err != nil {
@@ -143,17 +143,17 @@ func (s *DefaultService) GetUserDocuments(ctx context.Context, userID uint64, pa
 
 func (s *DefaultService) GetSharedDocuments(ctx context.Context, userID uint64, page, pageSize int) (*PaginatedDocuments, error) {
 	// Get the current data version for this user shared documents
-    versionKey := fmt.Sprintf("user:%d:docs:shared:version", userID)
-    v := s.cache.GetVersion(ctx, versionKey)
+	versionKey := fmt.Sprintf("user:%d:docs:shared:version", userID)
+	v := s.cache.GetVersion(ctx, versionKey)
 
 	cacheKey := fmt.Sprintf("docs:shared:u:%d:v:%d:p:%d:ps:%d", userID, v, page, pageSize)
 
 	var result PaginatedDocuments
 	// get data from cache
-    found, _ := s.cache.Get(ctx, cacheKey, &result)
-    if found {
-        return &result, nil
-    }
+	found, _ := s.cache.Get(ctx, cacheKey, &result)
+	if found {
+		return &result, nil
+	}
 
 	documents, meta, err := s.repository.ListSharedDocuments(ctx, userID, page, pageSize)
 
@@ -167,15 +167,14 @@ func (s *DefaultService) GetSharedDocuments(ctx context.Context, userID uint64, 
 	return &result, nil
 }
 
-
 type DocumentShowResponse struct {
 	ID        uint64    `json:"id"`
 	Title     string    `json:"title"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Role      string    `json:"role"`
-	OwnerName string	`json:"owner_name"`
-	OwnerId   uint64	`json:"owner_id"`
+	OwnerName string    `json:"owner_name"`
+	OwnerId   uint64    `json:"owner_id"`
 }
 
 func (s *DefaultService) GetDocumentByID(ctx context.Context, docID uint64, userID uint64) (*DocumentShowResponse, error) {
@@ -220,17 +219,17 @@ func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, docID uint64,
 	}
 
 	// Throttled Invalidation
-    s.workerPool.Submit(func(bgCtx context.Context) error {
+	s.workerPool.Submit(func(bgCtx context.Context) error {
 		timeoutCtx, cancel := context.WithTimeout(bgCtx, 10*time.Second)
 		defer cancel()
-		
+
 		// Use docID in the lock so edits to Doc A don't block invalidation for Doc B
-        lockKey := fmt.Sprintf("invalidation_cooldown:d:%d", docID)
-        
-        //  we only invalidate once every 1 minute per document
-        isNew, _ := s.cache.SetNX(timeoutCtx, lockKey, "1", time.Minute)
-        
-        if isNew {
+		lockKey := fmt.Sprintf("invalidation_cooldown:d:%d", docID)
+
+		//  we only invalidate once every 1 minute per document
+		isNew, _ := s.cache.SetNX(timeoutCtx, lockKey, "1", time.Minute)
+
+		if isNew {
 			collaborators, err := s.repository.ListDocumentCollaborators(timeoutCtx, docID)
 			if err != nil {
 				return err
@@ -248,15 +247,15 @@ func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, docID uint64,
 				s.cache.IncrementVersion(timeoutCtx, versionKey)
 			}
 
-        }
-        return nil
-    })
+		}
+		return nil
+	})
 
 	if s.shouldSnapshot(ctx, docID) {
 		// run on the background
 		s.workerPool.Submit(func(bgCtx context.Context) error {
-            return s.handleBackgroundSnapshot(bgCtx, docID)
-        })
+			return s.handleBackgroundSnapshot(bgCtx, docID)
+		})
 	}
 
 	return nil
@@ -264,30 +263,25 @@ func (s *DefaultService) CreateDocumentUpdate(ctx context.Context, docID uint64,
 
 // run snapshot on the background
 func (s *DefaultService) handleBackgroundSnapshot(ctx context.Context, docID uint64) error {
-    lockKey := fmt.Sprintf("lock:snapshot:%d", docID)
-    
-    // This prevents multiple snapshots for the same document overlapping
-    locked, err := s.cache.SetNX(ctx, lockKey, "processing", 30*time.Second)
-    if err != nil || !locked {
-        return nil // Already being processed by another worker
-    }
-    defer s.cache.Invalidate(ctx, lockKey)
+	lockKey := fmt.Sprintf("lock:snapshot:%d", docID)
 
-    // Re-verify if snapshot is still needed
-    if !s.shouldSnapshot(ctx, docID) {
-        return nil
-    }
+	// This prevents multiple snapshots for the same document overlapping
+	locked, err := s.cache.SetNX(ctx, lockKey, "processing", 30*time.Second)
+	if err != nil || !locked {
+		return nil // Already being processed by another worker
+	}
+	defer s.cache.Invalidate(ctx, lockKey)
 
-    // set timeout for fetch from sync + save to DB to 10s
-    timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	// Re-verify if snapshot is still needed
+	if !s.shouldSnapshot(ctx, docID) {
+		return nil
+	}
+
+	// set timeout for post snapshot from sync
+	timeoutCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-    state, err := s.syncClient.FetchDocumentState(timeoutCtx, docID)
-    if err != nil {
-        return err
-    }
-
-    return s.repository.CreateSnapshot(timeoutCtx, docID, state)
+	return s.syncClient.PostDocumentSnapshot(timeoutCtx, docID)
 }
 
 func (s *DefaultService) CreateDocumentSnapshot(ctx context.Context, docID uint64, state []byte) error {
@@ -439,7 +433,7 @@ func (s *DefaultService) AddCollaborator(
 
 	// invalidate cache
 	versionKey := fmt.Sprintf("user:%d:docs:shared:version", targetUserID)
-    s.cache.IncrementVersion(ctx, versionKey)
+	s.cache.IncrementVersion(ctx, versionKey)
 
 	// 5. Response DTO
 	return &DocumentCollaboratorDTO{
@@ -493,11 +487,11 @@ func (s *DefaultService) ChangeCollaboratorRole(
 	); err != nil {
 		return nil, err
 	}
-	
+
 	// invalidate cache
 	versionKey := fmt.Sprintf("user:%d:docs:shared:version", targetUserID)
-    s.cache.IncrementVersion(ctx, versionKey)
-	
+	s.cache.IncrementVersion(ctx, versionKey)
+
 	// Submit to Worker Pool
 	s.workerPool.Submit(func(bgCtx context.Context) error {
 		// 5s timeout
@@ -517,9 +511,9 @@ func (s *DefaultService) ChangeCollaboratorRole(
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &DocumentCollaboratorDTO{
-			User: UserDTO{
+		User: UserDTO{
 			ID:    user.ID,
 			Name:  user.Name,
 			Email: user.Email,
@@ -559,8 +553,8 @@ func (s *DefaultService) RemoveCollaborator(
 
 	// invalidate cache
 	versionKey := fmt.Sprintf("user:%d:docs:shared:version", targetUserID)
-    s.cache.IncrementVersion(ctx, versionKey)
-	
+	s.cache.IncrementVersion(ctx, versionKey)
+
 	// Submit to Worker Pool
 	s.workerPool.Submit(func(bgCtx context.Context) error {
 		// 5s timeout
@@ -597,24 +591,23 @@ func (s *DefaultService) DeleteDocument(ctx context.Context, docID uint64, userI
 		return err
 	}
 
-	
 	// Submit to Worker Pool
 	s.workerPool.Submit(func(bgCtx context.Context) error {
 		// 10s timeout
 		timeoutCtx, cancel := context.WithTimeout(bgCtx, 10*time.Second)
 		defer cancel()
-		
+
 		// Invalidate cache
 		for _, col := range collaborators {
 			var versionKey string
-            if col.Role == "owner" {
-                versionKey = fmt.Sprintf("user:%d:docs:version", col.UserID)
-            } else {
+			if col.Role == "owner" {
+				versionKey = fmt.Sprintf("user:%d:docs:version", col.UserID)
+			} else {
 				// shared document
-                versionKey = fmt.Sprintf("user:%d:docs:shared:version", col.UserID)
-            }
-            // invalidate
-            s.cache.IncrementVersion(timeoutCtx, versionKey)
+				versionKey = fmt.Sprintf("user:%d:docs:shared:version", col.UserID)
+			}
+			// invalidate
+			s.cache.IncrementVersion(timeoutCtx, versionKey)
 		}
 
 		// send update to sync-server
@@ -624,5 +617,5 @@ func (s *DefaultService) DeleteDocument(ctx context.Context, docID uint64, userI
 		)
 	})
 
-	return  nil
+	return nil
 }

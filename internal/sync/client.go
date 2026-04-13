@@ -29,7 +29,7 @@ type SyncClient struct {
 }
 
 type Client interface {
-	FetchDocumentState(ctx context.Context, docID uint64) ([]byte, error)
+	PostDocumentSnapshot(ctx context.Context, docID uint64) ([]byte, error)
 	UpdateUserPermission(ctx context.Context, docID uint64, userID uint64, role string) error
 	RemoveDocument(ctx context.Context, docID uint64) error
 }
@@ -107,42 +107,32 @@ func (s *SyncClient) doRequest(ctx context.Context, method, path string, headers
 	return resp, nil
 }
 
-// GET /internal/documents/:id/state
-func (s *SyncClient) FetchDocumentState(ctx context.Context, docID uint64) ([]byte, error) {
+// POST /internal/documents/:id/snapshot
+func (s *SyncClient) PostDocumentSnapshot(ctx context.Context, docID uint64) error {
 	if s.grpcClient != nil {
 		// use gRPC transport
 		md := metadata.Pairs("x-internal-secret", config.AppConfig.SyncServerSecret)
 		ctx = metadata.NewOutgoingContext(ctx, md)
-		resp, err := s.grpcClient.GetState(ctx, &syncpb.DocumentIDRequest{Id: docID})
+		_, err := s.grpcClient.PostSnapshot(ctx, &syncpb.DocumentIDRequest{Id: docID})
 		if err != nil {
 			log.Error().Err(err).Uint64("doc_id", docID).Msg("gRPC call to sync server failed")
-			return nil, err
+			return err
 		}
-		if len(resp.State) == 0 {
-			log.Error().Uint64("doc_id", docID).Msg("gRPC sync server returned empty snapshot")
-			return nil, fmt.Errorf("empty state from sync server")
-		}
-		return resp.State, nil
+		return nil
 	}
 
-	path := fmt.Sprintf("/internal/documents/%d/state", docID)
+	path := fmt.Sprintf("/internal/documents/%d/snapshot", docID)
 	headers := map[string]string{
 		"Content-Type": "application/octet-stream",
 	}
-	resp, err := s.doRequest(ctx, http.MethodGet, path, headers, nil)
+	resp, err := s.doRequest(ctx, http.MethodPost, path, headers, nil)
 	if err != nil {
-		log.Error().Err(err).Uint64("doc_id", docID).Msg("failed to get last state from sync server")
-		return nil, err
+		log.Error().Err(err).Uint64("doc_id", docID).Msg("failed to request snapshot from sync server")
+		return err
 	}
 	defer resp.Body.Close()
 
-	state, err := io.ReadAll(resp.Body)
-	if err != nil || len(state) == 0 {
-		log.Error().Err(err).Uint64("doc_id", docID).Msg("Can't read doc state or empty state")
-		return nil, err
-	}
-
-	return state, nil
+	return nil
 }
 
 type UpdateRequest struct {
