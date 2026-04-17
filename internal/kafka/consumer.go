@@ -2,13 +2,9 @@ package kafka
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
-
 	"github.com/rs/zerolog/log"
 
 	"collaborative-markdown-editor/internal/config"
-	"collaborative-markdown-editor/internal/document"
 	"collaborative-markdown-editor/internal/event"
 	"collaborative-markdown-editor/internal/worker"
 
@@ -18,22 +14,14 @@ import (
 type KafkaConsumer struct {
 	consumer     *kafka.Consumer
 	wp           *worker.WorkerPool
-	eventService event.EventService
-	docService   document.Service
+	eventService event.Service
 	workers      map[int32]chan *kafka.Message
 	isRunning    bool
 }
 
-type KafkaDocMessage struct {
-	EventID    string `json:"event_id"`
-	Type       string `json:"type"`
-	DocumentID uint64 `json:"document_id"`
-	UserID     uint64 `json:"user_id"`
-	Timestamp  int64  `json:"timestamp"`
-	Data       string `json:"data"`
-}
 
-func NewKafkaConsumer(workerPool *worker.WorkerPool, eventService event.EventService, groupID string, topics []string, docService document.Service) (*KafkaConsumer, error) {
+
+func NewKafkaConsumer(workerPool *worker.WorkerPool, eventService event.Service, groupID string, topics []string) (*KafkaConsumer, error) {
 	c, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers":        config.AppConfig.KafkaBootstrapServers,
 		"group.id":                 groupID,
@@ -52,7 +40,6 @@ func NewKafkaConsumer(workerPool *worker.WorkerPool, eventService event.EventSer
 		consumer:     c,
 		wp:           workerPool,
 		eventService: eventService,
-		docService:   docService,
 		workers:      map[int32]chan *kafka.Message{},
 		isRunning:    true,
 	}, nil
@@ -128,39 +115,7 @@ func (kc *KafkaConsumer) processMessage(ctx context.Context, message *kafka.Mess
 
 	switch *message.TopicPartition.Topic {
 	case "document.events":
-		var kafkaDocMsg KafkaDocMessage
-		if err := json.Unmarshal(message.Value, &kafkaDocMsg); err != nil {
-			log.Error().Err(err).Msg("Failed to unmarshal Kafka Doc message")
-			return err
-		}
-		switch kafkaDocMsg.Type {
-		case "document.updated":
-			docUpdate, err := base64.StdEncoding.DecodeString(kafkaDocMsg.Data)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to decode document update")
-				return err
-			}
-			err = kc.docService.CreateDocumentUpdate(ctx, kafkaDocMsg.DocumentID, kafkaDocMsg.UserID, docUpdate)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to create document update")
-				return err
-			}
-			return nil
-		case "document.snapshot":
-			docSnapshot, err := base64.StdEncoding.DecodeString(kafkaDocMsg.Data)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to decode document snapshot")
-				return err
-			}
-			err = kc.docService.CreateDocumentSnapshot(ctx, kafkaDocMsg.DocumentID, docSnapshot)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to create document snapshot")
-				return err
-			}
-			return nil
-		default:
-			log.Debug().Msgf("Unknown message type %s in topic %s", kafkaDocMsg.Type, *message.TopicPartition.Topic)
-		}
+		return kc.eventService.ProcessDocumentEvent(ctx, message)
 	default:
 		log.Debug().Msgf("Unknown topic %s", *message.TopicPartition.Topic)
 	}

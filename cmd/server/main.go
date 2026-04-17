@@ -72,7 +72,7 @@ func main() {
 		uint64(config.AppConfig.DocumentSnapshotThreshold),
 		wp,
 	)
-	eventService := event.NewService(eventRepo)
+	eventService := event.NewService(eventRepo, docService)
 	
 	// Initialize handler
 	docHandler := document.NewHandler(docService)
@@ -186,7 +186,6 @@ func main() {
 		eventService,
 		"document-sync-group",
 		[]string{"document.events"},
-		docService,
 	)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create Kafka consumer")
