@@ -9,16 +9,19 @@ import (
 
 	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/document"
+	"collaborative-markdown-editor/internal/event"
 	"collaborative-markdown-editor/internal/worker"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 type KafkaConsumer struct {
-	consumer   *kafka.Consumer
-	wp         *worker.WorkerPool
-	docService document.Service
-	isRunning  bool
+	consumer     *kafka.Consumer
+	wp           *worker.WorkerPool
+	eventService event.EventService
+	docService   document.Service
+	workers      map[int32]chan *kafka.Message
+	isRunning    bool
 }
 
 type KafkaDocMessage struct {
@@ -30,10 +33,10 @@ type KafkaDocMessage struct {
 	Data       string `json:"data"`
 }
 
-func NewKafkaConsumer(workerPool *worker.WorkerPool, docService document.Service) (*KafkaConsumer, error) {
+func NewKafkaConsumer(workerPool *worker.WorkerPool, eventService event.EventService, groupID string, topics []string, docService document.Service) (*KafkaConsumer, error) {
 	c, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers":        config.AppConfig.KafkaBootstrapServers,
-		"group.id":                 "document-sync-group",
+		"group.id":                 groupID,
 		"auto.offset.reset":        "earliest",
 		"enable.auto.commit":       false,
 		"allow.auto.create.topics": true,
@@ -43,9 +46,16 @@ func NewKafkaConsumer(workerPool *worker.WorkerPool, docService document.Service
 		return nil, err
 	}
 
-	c.SubscribeTopics([]string{"document.sync"}, nil)
+	c.SubscribeTopics(topics, nil)
 
-	return &KafkaConsumer{consumer: c, wp: workerPool, docService: docService, isRunning: true}, nil
+	return &KafkaConsumer{
+		consumer:     c,
+		wp:           workerPool,
+		eventService: eventService,
+		docService:   docService,
+		workers:      map[int32]chan *kafka.Message{},
+		isRunning:    true,
+	}, nil
 }
 
 func (kc *KafkaConsumer) Start() error {
@@ -56,14 +66,20 @@ func (kc *KafkaConsumer) Start() error {
 		}
 		switch e := ev.(type) {
 		case *kafka.Message:
-			kc.wp.Submit(func(bgCtx context.Context) error {
-				return kc.processMessage(bgCtx, e)
-			})
+			partition := e.TopicPartition.Partition
+
+			if kc.workers[partition] == nil {
+				kc.workers[partition] = make(chan *kafka.Message, 100)
+
+				go kc.startPartitionWorker(partition, kc.workers[partition])
+			}
+
+			kc.workers[partition] <- e
 		case kafka.Error:
 			// ERRORS: Handle connection issues
 			log.Error().Err(e).Msg("Consumer error")
 			if e.IsFatal() {
-				kc.isRunning = false
+				kc.Close()
 			}
 		default:
 			log.Debug().Msgf("Ignored %v\n", e)
@@ -72,8 +88,37 @@ func (kc *KafkaConsumer) Start() error {
 	return nil
 }
 
+func (kc *KafkaConsumer) startPartitionWorker(
+	partition int32,
+	ch chan *kafka.Message,
+) {
+	for msg := range ch {
+		bgCtx := context.Background()
+		canProcess := kc.eventService.CanProcess(bgCtx, msg.Value)
+		if !canProcess {
+			log.Debug().Msgf("Can't process message %v", msg.Value)
+			continue
+		}
+
+		err := kc.processMessage(bgCtx, msg)
+
+		if err != nil {
+			log.Error().Err(err).Msgf("Failed on processing partition %d", partition)
+			continue
+		}
+
+		_, err = kc.consumer.CommitMessage(msg)
+		if err != nil {
+			log.Error().Err(err).Msg("Commit failed")
+		}
+	}
+}
+
 func (kc *KafkaConsumer) Close() error {
 	kc.isRunning = false
+	for _, ch := range kc.workers {
+		close(ch)
+	}
 	return kc.consumer.Close()
 }
 
@@ -82,7 +127,7 @@ func (kc *KafkaConsumer) processMessage(ctx context.Context, message *kafka.Mess
 		*message.TopicPartition.Topic, message.TopicPartition.Partition, string(message.Key), string(message.Value))
 
 	switch *message.TopicPartition.Topic {
-	case "document.sync":
+	case "document.events":
 		var kafkaDocMsg KafkaDocMessage
 		if err := json.Unmarshal(message.Value, &kafkaDocMsg); err != nil {
 			log.Error().Err(err).Msg("Failed to unmarshal Kafka Doc message")
@@ -100,8 +145,6 @@ func (kc *KafkaConsumer) processMessage(ctx context.Context, message *kafka.Mess
 				log.Error().Err(err).Msg("Failed to create document update")
 				return err
 			}
-			// commit message to kafka
-			kc.consumer.CommitMessage(message)
 			return nil
 		case "document.snapshot":
 			docSnapshot, err := base64.StdEncoding.DecodeString(kafkaDocMsg.Data)
@@ -114,12 +157,12 @@ func (kc *KafkaConsumer) processMessage(ctx context.Context, message *kafka.Mess
 				log.Error().Err(err).Msg("Failed to create document snapshot")
 				return err
 			}
-			// commit message to kafka
-			kc.consumer.CommitMessage(message)
 			return nil
 		default:
 			log.Debug().Msgf("Unknown message type %s in topic %s", kafkaDocMsg.Type, *message.TopicPartition.Topic)
 		}
+	default:
+		log.Debug().Msgf("Unknown topic %s", *message.TopicPartition.Topic)
 	}
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/db"
 	"collaborative-markdown-editor/internal/document"
+	"collaborative-markdown-editor/internal/event"
 	"collaborative-markdown-editor/internal/kafka"
 	"collaborative-markdown-editor/internal/middleware"
 	"collaborative-markdown-editor/internal/sync"
@@ -54,6 +55,8 @@ func main() {
 	// Initialize repository
 	userRepo := user.NewRepository(db.AppDb)
 	docRepo := document.NewRepository(db.AppDb)
+	eventRepo := event.NewRepository(db.AppDb)
+
 	// Initialize service
 	userService := user.NewService(userRepo, redisCache)
 	syncClient := sync.NewSyncClient()
@@ -69,6 +72,8 @@ func main() {
 		uint64(config.AppConfig.DocumentSnapshotThreshold),
 		wp,
 	)
+	eventService := event.NewService(eventRepo)
+	
 	// Initialize handler
 	docHandler := document.NewHandler(docService)
 	userHandler := user.NewHandler(userService)
@@ -176,7 +181,13 @@ func main() {
 	}
 
 	// Start Kafka consumer
-	kafkaConsumer, err := kafka.NewKafkaConsumer(wp, docService)
+	kafkaConsumer, err := kafka.NewKafkaConsumer(
+		wp,
+		eventService,
+		"document-sync-group",
+		[]string{"document.events"},
+		docService,
+	)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create Kafka consumer")
 	}
