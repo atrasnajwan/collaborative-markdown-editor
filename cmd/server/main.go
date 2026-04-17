@@ -182,7 +182,6 @@ func main() {
 
 	// Start Kafka consumer
 	kafkaConsumer, err := kafka.NewKafkaConsumer(
-		wp,
 		eventService,
 		"document-sync-group",
 		[]string{"document.events"},

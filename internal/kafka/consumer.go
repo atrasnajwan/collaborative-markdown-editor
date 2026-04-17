@@ -2,26 +2,28 @@ package kafka
 
 import (
 	"context"
+	"errors"
+	"sync"
+	"sync/atomic"
+
 	"github.com/rs/zerolog/log"
 
 	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/event"
-	"collaborative-markdown-editor/internal/worker"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 type KafkaConsumer struct {
 	consumer     *kafka.Consumer
-	wp           *worker.WorkerPool
 	eventService event.Service
 	workers      map[int32]chan *kafka.Message
-	isRunning    bool
+	isRunning     atomic.Bool
+	mu           sync.Mutex
+	wg           sync.WaitGroup
 }
 
-
-
-func NewKafkaConsumer(workerPool *worker.WorkerPool, eventService event.Service, groupID string, topics []string) (*KafkaConsumer, error) {
+func NewKafkaConsumer(eventService event.Service, groupID string, topics []string) (*KafkaConsumer, error) {
 	c, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers":        config.AppConfig.KafkaBootstrapServers,
 		"group.id":                 groupID,
@@ -33,20 +35,42 @@ func NewKafkaConsumer(workerPool *worker.WorkerPool, eventService event.Service,
 	if err != nil {
 		return nil, err
 	}
-
-	c.SubscribeTopics(topics, nil)
-
-	return &KafkaConsumer{
+	kc := &KafkaConsumer{
 		consumer:     c,
-		wp:           workerPool,
 		eventService: eventService,
-		workers:      map[int32]chan *kafka.Message{},
-		isRunning:    true,
-	}, nil
+		workers:      make(map[int32]chan *kafka.Message),
+	}
+	kc.isRunning.Store(true)
+
+	c.SubscribeTopics(topics, func(c *kafka.Consumer, e kafka.Event) error {
+		// rebalance
+		switch ev := e.(type) {
+		case kafka.AssignedPartitions:
+			log.Info().Msgf("Assigned: %v", ev.Partitions)
+			c.Assign(ev.Partitions)
+
+		case kafka.RevokedPartitions:
+			log.Warn().Msgf("Revoked: %v", ev.Partitions)
+
+			kc.mu.Lock()
+			for _, p := range ev.Partitions {
+				if ch, ok := kc.workers[p.Partition]; ok {
+					delete(kc.workers, p.Partition)
+					close(ch)
+				}
+			}
+			kc.mu.Unlock()
+
+			c.Unassign()
+		}
+		return nil
+	})
+
+	return kc, nil
 }
 
 func (kc *KafkaConsumer) Start() error {
-	for kc.isRunning {
+	for kc.isRunning.Load() {
 		ev := kc.consumer.Poll(100) // 100 ms
 		if ev == nil {
 			continue
@@ -55,16 +79,29 @@ func (kc *KafkaConsumer) Start() error {
 		case *kafka.Message:
 			partition := e.TopicPartition.Partition
 
+			kc.mu.Lock()
 			if kc.workers[partition] == nil {
 				kc.workers[partition] = make(chan *kafka.Message, 100)
 
-				go kc.startPartitionWorker(partition, kc.workers[partition])
+				kc.wg.Add(1)
+				go func() {
+					defer kc.wg.Done()
+					kc.startPartitionWorker(partition, kc.workers[partition])
+				}()
+			}
+			channel := kc.workers[partition]
+			kc.mu.Unlock()
+
+			select {
+			case channel <- e:
+			default:
+				log.Warn().Msg("Partition channel full, slowing down")
+				channel <- e
 			}
 
-			kc.workers[partition] <- e
 		case kafka.Error:
 			// ERRORS: Handle connection issues
-			log.Error().Err(e).Msg("Consumer error")
+			log.Error().Err(e).Msgf("Consumer error %v", e.IsFatal())
 			if e.IsFatal() {
 				kc.Close()
 			}
@@ -80,14 +117,7 @@ func (kc *KafkaConsumer) startPartitionWorker(
 	ch chan *kafka.Message,
 ) {
 	for msg := range ch {
-		bgCtx := context.Background()
-		canProcess := kc.eventService.CanProcess(bgCtx, msg.Value)
-		if !canProcess {
-			log.Debug().Msgf("Can't process message %v", msg.Value)
-			continue
-		}
-
-		err := kc.processMessage(bgCtx, msg)
+		err := kc.processMessage(context.Background(), msg)
 
 		if err != nil {
 			log.Error().Err(err).Msgf("Failed on processing partition %d", partition)
@@ -102,10 +132,15 @@ func (kc *KafkaConsumer) startPartitionWorker(
 }
 
 func (kc *KafkaConsumer) Close() error {
-	kc.isRunning = false
+	kc.isRunning.Store(false)
+
+	kc.mu.Lock()
 	for _, ch := range kc.workers {
 		close(ch)
 	}
+	kc.mu.Unlock()
+	kc.wg.Wait()
+
 	return kc.consumer.Close()
 }
 
@@ -118,6 +153,6 @@ func (kc *KafkaConsumer) processMessage(ctx context.Context, message *kafka.Mess
 		return kc.eventService.ProcessDocumentEvent(ctx, message)
 	default:
 		log.Debug().Msgf("Unknown topic %s", *message.TopicPartition.Topic)
+		return errors.New("Unknown topic")
 	}
-	return nil
 }

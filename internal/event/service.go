@@ -5,15 +5,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/rs/zerolog/log"
 )
-
-type Message struct {
-	EventID string `json:"event_id"`
-}
 
 type Service struct {
 	repository EventRepository
@@ -24,17 +21,11 @@ func NewService(repo EventRepository, docService document.Service) Service {
 	return Service{repository: repo}
 }
 
-func (s Service) CanProcess(ctx context.Context, msg []byte) bool {
-	var message Message
-	if err := json.Unmarshal(msg, &message); err != nil {
-		log.Error().Err(err).Msg("Failed to unmarshal message")
-		return false
-	}
-
-	err := s.repository.Create(ctx, message)
+func (s Service) canProcess(ctx context.Context, eventID string) bool {
+	err := s.repository.Create(ctx, eventID)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") {
-			log.Debug().Msgf("Event already processed %s", message.EventID)
+			log.Debug().Msgf("Event already processed %s", eventID)
 			return false
 		}
 		log.Error().Err(err).Msg("Failed to insert message to DB")
@@ -57,6 +48,11 @@ func (s Service) ProcessDocumentEvent(ctx context.Context, message *kafka.Messag
 	if err := json.Unmarshal(message.Value, &docMessage); err != nil {
 		log.Error().Err(err).Msg("Failed to unmarshal Kafka Doc message")
 		return err
+	}
+
+	if canProcess := s.canProcess(ctx, docMessage.EventID); !canProcess {
+		log.Debug().Msgf("Can't process event %s", docMessage.EventID)
+		return errors.New("Can't Process event")
 	}
 
 	switch docMessage.Type {
