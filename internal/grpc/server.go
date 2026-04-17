@@ -65,9 +65,7 @@ func (s *Server) authInterceptor(
 }
 
 // Start creates and begins serving a gRPC server listening on the given
-// address.  It returns the underlying *grpc.Server and net.Listener so the
-// caller can later shut the server down gracefully.  The function itself does
-// not block; it spawns Serve in a goroutine.
+// address.
 func (s *Server) Start(address string) (*grpc.Server, net.Listener, error) {
 	opts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(s.loggingInterceptor, s.authInterceptor),
@@ -83,21 +81,7 @@ func (s *Server) Start(address string) (*grpc.Server, net.Listener, error) {
 		return nil, nil, err
 	}
 
-	// run serve asynchronously; caller may ignore the returned error or log it
-	go func() {
-		_ = grpcServer.Serve(listener)
-	}()
-
 	return grpcServer, listener, nil
-}
-
-// Register starts a dedicated gRPC server listening on the given address.
-func (s *Server) Register(address string) error {
-	grpcServer, listener, err := s.Start(address)
-	if err != nil {
-		return err
-	}
-	return grpcServer.Serve(listener)
 }
 
 // --- internalpb.InternalServiceServer methods ---

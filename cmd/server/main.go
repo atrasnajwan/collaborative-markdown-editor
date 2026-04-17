@@ -73,7 +73,7 @@ func main() {
 		wp,
 	)
 	eventService := event.NewService(eventRepo, docService)
-	
+
 	// Initialize handler
 	docHandler := document.NewHandler(docService)
 	userHandler := user.NewHandler(userService)
@@ -175,10 +175,16 @@ func main() {
 	grpcSrv := grpcserver.NewServer(docService, config.AppConfig.InternalSecret)
 	grpcAddr := fmt.Sprintf(":%s", config.AppConfig.GRPCPort)
 	log.Info().Msgf("gRPC server listening on port %s", config.AppConfig.GRPCPort)
-	serverInstance, _, err := grpcSrv.Start(grpcAddr)
+	serverInstance, listener, err := grpcSrv.Start(grpcAddr)
 	if err != nil {
-		log.Fatal().Err(err).Msg("gRPC server failed to start")
+		log.Fatal().Err(err).Msgf("failed to listen %s", grpcAddr)
 	}
+	go func() {
+		err := serverInstance.Serve(listener)
+		if err != nil {
+			log.Fatal().Err(err).Msg("gRPC server failed to start")
+		}
+	}()
 
 	// Start Kafka consumer
 	kafkaConsumer, err := kafka.NewKafkaConsumer(
@@ -190,7 +196,10 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to create Kafka consumer")
 	}
 	go func() {
-		kafkaConsumer.Start()
+		err := kafkaConsumer.Start()
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to start Kafka consumer")
+		}
 	}()
 
 	// Graceful shutdown

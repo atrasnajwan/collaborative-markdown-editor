@@ -103,7 +103,7 @@ func (kc *KafkaConsumer) Start() error {
 			// ERRORS: Handle connection issues
 			log.Error().Err(e).Msgf("Consumer error %v", e.IsFatal())
 			if e.IsFatal() {
-				kc.Close()
+				return kc.Close()
 			}
 		default:
 			log.Debug().Msgf("Ignored %v\n", e)
