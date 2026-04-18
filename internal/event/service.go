@@ -1,7 +1,6 @@
 package event
 
 import (
-	"collaborative-markdown-editor/internal/document"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -12,16 +11,20 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+type DocProvider interface {
+	CreateDocumentUpdate(ctx context.Context, id uint64, userID uint64, content []byte) error
+	CreateDocumentSnapshot(ctx context.Context, docID uint64, state []byte) error
+}
 type Service struct {
 	repository EventRepository
-	docService document.Service
+	docService DocProvider
 }
 
-func NewService(repo EventRepository, docService document.Service) Service {
-	return Service{repository: repo}
+func NewService(repo EventRepository, docService DocProvider) *Service {
+	return &Service{repository: repo, docService: docService}
 }
 
-func (s Service) canProcess(ctx context.Context, eventID string) bool {
+func (s *Service) canProcess(ctx context.Context, eventID string) bool {
 	err := s.repository.Create(ctx, eventID)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") {
@@ -43,7 +46,7 @@ type DocumentMessage struct {
 	Data       string `json:"data"`
 }
 
-func (s Service) ProcessDocumentEvent(ctx context.Context, message *kafka.Message) error {
+func (s *Service) ProcessDocumentEvent(ctx context.Context, message *kafka.Message) error {
 	var docMessage DocumentMessage
 	if err := json.Unmarshal(message.Value, &docMessage); err != nil {
 		log.Error().Err(err).Msg("Failed to unmarshal Kafka Doc message")
@@ -83,3 +86,4 @@ func (s Service) ProcessDocumentEvent(ctx context.Context, message *kafka.Messag
 	}
 	return nil
 }
+

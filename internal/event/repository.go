@@ -15,7 +15,7 @@ func NewRepository(db *gorm.DB) EventRepository {
 	return EventRepository{db: db}
 }
 
-func (r EventRepository) Create(ctx context.Context, eventID string) error {
+func (r *EventRepository) Create(ctx context.Context, eventID string) error {
 	processed := domain.Event{
 		ID: eventID,
 	}

@@ -16,14 +16,14 @@ import (
 
 type KafkaConsumer struct {
 	consumer     *kafka.Consumer
-	eventService event.Service
+	eventService *event.Service
 	workers      map[int32]chan *kafka.Message
-	isRunning     atomic.Bool
+	isRunning    atomic.Bool
 	mu           sync.Mutex
 	wg           sync.WaitGroup
 }
 
-func NewKafkaConsumer(eventService event.Service, groupID string, topics []string) (*KafkaConsumer, error) {
+func NewKafkaConsumer(eventService *event.Service, groupID string, topics []string) (*KafkaConsumer, error) {
 	c, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers":        config.AppConfig.KafkaBootstrapServers,
 		"group.id":                 groupID,
@@ -40,7 +40,6 @@ func NewKafkaConsumer(eventService event.Service, groupID string, topics []strin
 		eventService: eventService,
 		workers:      make(map[int32]chan *kafka.Message),
 	}
-	kc.isRunning.Store(true)
 
 	c.SubscribeTopics(topics, func(c *kafka.Consumer, e kafka.Event) error {
 		// rebalance
@@ -65,6 +64,8 @@ func NewKafkaConsumer(eventService event.Service, groupID string, topics []strin
 		}
 		return nil
 	})
+	
+	kc.isRunning.Store(true)
 
 	return kc, nil
 }

@@ -63,7 +63,11 @@ func main() {
 	defer func() {
 		_ = syncClient.Close()
 	}()
-
+	
+	kafkaProducer, err := kafka.NewKafkaProducer(wp)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize Kafka Producer")
+	}
 	docService := document.NewService(
 		docRepo,
 		userService,
@@ -71,6 +75,7 @@ func main() {
 		redisCache,
 		uint64(config.AppConfig.DocumentSnapshotThreshold),
 		wp,
+		kafkaProducer,
 	)
 	eventService := event.NewService(eventRepo, docService)
 

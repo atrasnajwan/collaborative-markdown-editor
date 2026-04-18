@@ -21,14 +21,14 @@ type Service interface {
 	Login(ctx context.Context, email, password string) (*domain.User, error)
 	Logout(ctx context.Context, userID uint64)
 	GetUserByID(ctx context.Context, id uint64) (*domain.User, error)
-	DeactivateUser(ctx context.Context,id uint64) error
+	DeactivateUser(ctx context.Context, id uint64) error
 	SearchUsers(ctx context.Context, query string) ([]domain.SafeUser, error)
 }
 
 // DefaultService implements Service
 type DefaultService struct {
 	repository UserRepository
-	cache *redis.Cache
+	cache      *redis.Cache
 }
 
 // NewService creates a new user service
@@ -60,47 +60,47 @@ func (s *DefaultService) Register(ctx context.Context, user *domain.User) error 
 }
 
 func (s *DefaultService) UpdateUser(ctx context.Context, userID uint64, req UpdateProfileRequest) (domain.SafeUser, error) {
-    updateData := make(map[string]interface{})
+	updateData := make(map[string]interface{})
 
-    if req.Name != nil {
-        updateData["name"] = *req.Name
-    }
-    
-    if req.Email != nil {
-        updateData["email"] = *req.Email
-    }
+	if req.Name != nil {
+		updateData["name"] = *req.Name
+	}
 
-    user, err := s.repository.UpdateFields(ctx, userID, updateData)
-    if err != nil {
-        // Handle unique constraint for email
-        if strings.Contains(err.Error(), "duplicate key") {
-            return domain.SafeUser{}, errors.Conflict("Email already in use", err)
-        }
-        return domain.SafeUser{}, err
-    }
+	if req.Email != nil {
+		updateData["email"] = *req.Email
+	}
+
+	user, err := s.repository.UpdateFields(ctx, userID, updateData)
+	if err != nil {
+		// Handle unique constraint for email
+		if strings.Contains(err.Error(), "duplicate key") {
+			return domain.SafeUser{}, errors.Conflict("Email already in use", err)
+		}
+		return domain.SafeUser{}, err
+	}
 	// TODO invalidate shared document
-    return user.ToSafeUser(), nil
+	return user.ToSafeUser(), nil
 }
 
 func (s *DefaultService) ChangePassword(ctx context.Context, userID uint64, req ChangePasswordRequest) error {
-    user, _ := s.repository.FindByID(ctx, userID)
-    
-    // Verify old password
-    if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.CurrentPassword)); err != nil {
-        return errors.Unauthorized("Current password incorrect", nil)
-    }
+	user, _ := s.repository.FindByID(ctx, userID)
 
-    // Hash new password
-    hashed, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
-    if err != nil {
+	// Verify old password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.CurrentPassword)); err != nil {
+		return errors.Unauthorized("Current password incorrect", nil)
+	}
+
+	// Hash new password
+	hashed, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
 		return err
 	}
 
-    // Update and increment TokenVersion (to log out other devices)
-    _, err = s.repository.UpdateFields(ctx, userID, map[string]interface{}{
-        "password_hash": string(hashed),
-        "token_version": gorm.Expr("token_version + 1"),
-    })
+	// Update and increment TokenVersion (to log out other devices)
+	_, err = s.repository.UpdateFields(ctx, userID, map[string]interface{}{
+		"password_hash": string(hashed),
+		"token_version": gorm.Expr("token_version + 1"),
+	})
 	return err
 }
 
@@ -114,7 +114,7 @@ func (s *DefaultService) Login(ctx context.Context, email, password string) (*do
 
 	// Check if user is active
 	if !user.IsActive {
-		return nil,errors.Unauthorized("User not active!", err)
+		return nil, errors.Unauthorized("User not active!", err)
 	}
 
 	// Check password
