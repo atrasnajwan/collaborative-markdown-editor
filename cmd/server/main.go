@@ -234,6 +234,7 @@ func main() {
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to close Kafka consumer")
 	}
+	kafkaProducer.Close()
 
 	log.Info().Msg("Server shutdown complete")
 }

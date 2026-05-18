@@ -9,8 +9,10 @@ import (
 	"context"
 	defError "errors"
 	"fmt"
+	"strconv"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -34,6 +36,9 @@ type Service interface {
 type UserProvider interface {
 	GetUserByID(ctx context.Context, id uint64) (*domain.User, error)
 }
+type KafkaProvider interface {
+	SendMessage(topic string, key string, message interface{})
+}
 
 type DefaultService struct {
 	repository        DocumentRepository
@@ -42,6 +47,7 @@ type DefaultService struct {
 	cache             *redis.Cache
 	snapshotThreshold uint64
 	workerPool        *worker.WorkerPool
+	kp                KafkaProvider
 }
 
 func NewService(
@@ -51,6 +57,7 @@ func NewService(
 	cache *redis.Cache,
 	snapshotThreshold uint64,
 	wp *worker.WorkerPool,
+	kp KafkaProvider,
 ) Service {
 	return &DefaultService{
 		repository:        repository,
@@ -59,6 +66,7 @@ func NewService(
 		cache:             cache,
 		snapshotThreshold: snapshotThreshold,
 		workerPool:        wp,
+		kp:                kp,
 	}
 }
 
@@ -446,6 +454,16 @@ func (s *DefaultService) AddCollaborator(
 	}, nil
 }
 
+type NotificationMessage struct {
+	EventID        string `json:"event_id"`
+	Type           string `json:"type"`
+	DocumentID     uint64 `json:"document_id"`
+	TriggeredBy    uint64 `json:"triggered_by"`
+	AffectedUserID uint64 `json:"affected_user_id"`
+	Timestamp      int64  `json:"timestamp"`
+	Role           string `json:"role"`
+}
+
 func (s *DefaultService) ChangeCollaboratorRole(
 	ctx context.Context,
 	docID,
@@ -492,20 +510,17 @@ func (s *DefaultService) ChangeCollaboratorRole(
 	versionKey := fmt.Sprintf("user:%d:docs:shared:version", targetUserID)
 	s.cache.IncrementVersion(ctx, versionKey)
 
-	// Submit to Worker Pool
-	s.workerPool.Submit(func(bgCtx context.Context) error {
-		// 5s timeout
-		timeoutCtx, cancel := context.WithTimeout(bgCtx, 5*time.Second)
-		defer cancel()
-
-		// send update to sync-server
-		return s.syncClient.UpdateUserPermission(
-			timeoutCtx,
-			docID,
-			targetUserID,
-			newRole,
-		)
-	})
+	// send notifications
+	message := &NotificationMessage{
+		EventID:        uuid.New().String(),
+		Type:           "document.role_updated",
+		DocumentID:     docID,
+		TriggeredBy:    requesterID,
+		AffectedUserID: targetUserID,
+		Role:           newRole,
+		Timestamp:      time.Now().Unix(),
+	}
+	s.kp.SendMessage("notification-events", strconv.FormatUint(docID, 10), message)
 
 	user, err := s.userProvider.GetUserByID(ctx, targetUserID)
 	if err != nil {
