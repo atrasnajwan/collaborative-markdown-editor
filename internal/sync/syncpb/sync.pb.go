@@ -66,58 +66,6 @@ func (x *DocumentIDRequest) GetId() uint64 {
 	return 0
 }
 
-type DocumentUpdate struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Seq           uint64                 `protobuf:"varint,1,opt,name=seq,proto3" json:"seq,omitempty"`
-	Binary        []byte                 `protobuf:"bytes,2,opt,name=binary,proto3" json:"binary,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *DocumentUpdate) Reset() {
-	*x = DocumentUpdate{}
-	mi := &file_internal_sync_syncpb_sync_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *DocumentUpdate) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*DocumentUpdate) ProtoMessage() {}
-
-func (x *DocumentUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_sync_syncpb_sync_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use DocumentUpdate.ProtoReflect.Descriptor instead.
-func (*DocumentUpdate) Descriptor() ([]byte, []int) {
-	return file_internal_sync_syncpb_sync_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *DocumentUpdate) GetSeq() uint64 {
-	if x != nil {
-		return x.Seq
-	}
-	return 0
-}
-
-func (x *DocumentUpdate) GetBinary() []byte {
-	if x != nil {
-		return x.Binary
-	}
-	return nil
-}
-
 type PermissionChangedRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	DocId         uint64                 `protobuf:"varint,1,opt,name=doc_id,json=docId,proto3" json:"doc_id,omitempty"`
@@ -129,7 +77,7 @@ type PermissionChangedRequest struct {
 
 func (x *PermissionChangedRequest) Reset() {
 	*x = PermissionChangedRequest{}
-	mi := &file_internal_sync_syncpb_sync_proto_msgTypes[2]
+	mi := &file_internal_sync_syncpb_sync_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -141,7 +89,7 @@ func (x *PermissionChangedRequest) String() string {
 func (*PermissionChangedRequest) ProtoMessage() {}
 
 func (x *PermissionChangedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_sync_syncpb_sync_proto_msgTypes[2]
+	mi := &file_internal_sync_syncpb_sync_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -154,7 +102,7 @@ func (x *PermissionChangedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PermissionChangedRequest.ProtoReflect.Descriptor instead.
 func (*PermissionChangedRequest) Descriptor() ([]byte, []int) {
-	return file_internal_sync_syncpb_sync_proto_rawDescGZIP(), []int{2}
+	return file_internal_sync_syncpb_sync_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *PermissionChangedRequest) GetDocId() uint64 {
@@ -185,10 +133,7 @@ const file_internal_sync_syncpb_sync_proto_rawDesc = "" +
 	"\x1finternal/sync/syncpb/sync.proto\x12\n" +
 	"syncserver\x1a\x1bgoogle/protobuf/empty.proto\"#\n" +
 	"\x11DocumentIDRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x04R\x02id\":\n" +
-	"\x0eDocumentUpdate\x12\x10\n" +
-	"\x03seq\x18\x01 \x01(\x04R\x03seq\x12\x16\n" +
-	"\x06binary\x18\x02 \x01(\fR\x06binary\"^\n" +
+	"\x02id\x18\x01 \x01(\x04R\x02id\"^\n" +
 	"\x18PermissionChangedRequest\x12\x15\n" +
 	"\x06doc_id\x18\x01 \x01(\x04R\x05docId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\x04R\x06userId\x12\x12\n" +
@@ -210,20 +155,19 @@ func file_internal_sync_syncpb_sync_proto_rawDescGZIP() []byte {
 	return file_internal_sync_syncpb_sync_proto_rawDescData
 }
 
-var file_internal_sync_syncpb_sync_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_internal_sync_syncpb_sync_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_internal_sync_syncpb_sync_proto_goTypes = []any{
 	(*DocumentIDRequest)(nil),        // 0: syncserver.DocumentIDRequest
-	(*DocumentUpdate)(nil),           // 1: syncserver.DocumentUpdate
-	(*PermissionChangedRequest)(nil), // 2: syncserver.PermissionChangedRequest
-	(*emptypb.Empty)(nil),            // 3: google.protobuf.Empty
+	(*PermissionChangedRequest)(nil), // 1: syncserver.PermissionChangedRequest
+	(*emptypb.Empty)(nil),            // 2: google.protobuf.Empty
 }
 var file_internal_sync_syncpb_sync_proto_depIdxs = []int32{
 	0, // 0: syncserver.SyncServerInternal.PostSnapshot:input_type -> syncserver.DocumentIDRequest
 	0, // 1: syncserver.SyncServerInternal.DeleteDocument:input_type -> syncserver.DocumentIDRequest
-	2, // 2: syncserver.SyncServerInternal.PermissionChanged:input_type -> syncserver.PermissionChangedRequest
-	3, // 3: syncserver.SyncServerInternal.PostSnapshot:output_type -> google.protobuf.Empty
-	3, // 4: syncserver.SyncServerInternal.DeleteDocument:output_type -> google.protobuf.Empty
-	3, // 5: syncserver.SyncServerInternal.PermissionChanged:output_type -> google.protobuf.Empty
+	1, // 2: syncserver.SyncServerInternal.PermissionChanged:input_type -> syncserver.PermissionChangedRequest
+	2, // 3: syncserver.SyncServerInternal.PostSnapshot:output_type -> google.protobuf.Empty
+	2, // 4: syncserver.SyncServerInternal.DeleteDocument:output_type -> google.protobuf.Empty
+	2, // 5: syncserver.SyncServerInternal.PermissionChanged:output_type -> google.protobuf.Empty
 	3, // [3:6] is the sub-list for method output_type
 	0, // [0:3] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
@@ -242,7 +186,7 @@ func file_internal_sync_syncpb_sync_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_sync_syncpb_sync_proto_rawDesc), len(file_internal_sync_syncpb_sync_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
