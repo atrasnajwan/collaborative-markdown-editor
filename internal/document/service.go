@@ -570,20 +570,17 @@ func (s *DefaultService) RemoveCollaborator(
 	versionKey := fmt.Sprintf("user:%d:docs:shared:version", targetUserID)
 	s.cache.IncrementVersion(ctx, versionKey)
 
-	// Submit to Worker Pool
-	s.workerPool.Submit(func(bgCtx context.Context) error {
-		// 5s timeout
-		timeoutCtx, cancel := context.WithTimeout(bgCtx, 5*time.Second)
-		defer cancel()
-
-		// send update to sync-server
-		return s.syncClient.UpdateUserPermission(
-			timeoutCtx,
-			docID,
-			targetUserID,
-			"none",
-		)
-	})
+	// send notifications
+	message := &NotificationMessage{
+		EventID:        uuid.New().String(),
+		Type:           "document.role_updated",
+		DocumentID:     docID,
+		TriggeredBy:    requesterID,
+		AffectedUserID: targetUserID,
+		Role:           "none",
+		Timestamp:      time.Now().Unix(),
+	}
+	s.kp.SendMessage("notification-events", strconv.FormatUint(docID, 10), message)
 
 	return nil
 }
@@ -625,12 +622,18 @@ func (s *DefaultService) DeleteDocument(ctx context.Context, docID uint64, userI
 			s.cache.IncrementVersion(timeoutCtx, versionKey)
 		}
 
-		// send update to sync-server
-		return s.syncClient.RemoveDocument(
-			timeoutCtx,
-			docID,
-		)
+		return nil
 	})
+
+	// send notifications
+	message := &NotificationMessage{
+		EventID:        uuid.New().String(),
+		Type:           "document.deleted",
+		DocumentID:     docID,
+		Timestamp:      time.Now().Unix(),
+	}
+
+	s.kp.SendMessage("notification-events", strconv.FormatUint(docID, 10), message)
 
 	return nil
 }
