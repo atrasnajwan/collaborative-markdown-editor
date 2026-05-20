@@ -7,6 +7,7 @@ import (
 	"collaborative-markdown-editor/internal/event"
 	"collaborative-markdown-editor/internal/kafka"
 	"collaborative-markdown-editor/internal/middleware"
+	"collaborative-markdown-editor/internal/notification"
 	"collaborative-markdown-editor/internal/sync"
 	"collaborative-markdown-editor/internal/user"
 	"collaborative-markdown-editor/internal/worker"
@@ -63,11 +64,19 @@ func main() {
 	defer func() {
 		_ = syncClient.Close()
 	}()
-	
+
 	kafkaProducer, err := kafka.NewKafkaProducer(wp)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to initialize Kafka Producer")
+		log.Error().Err(err).Msg("Failed to initialize Kafka Producer")
+		log.Warn().Msg("Will use http/grpc to communicate")
 	}
+
+	notificationService := notification.NewService(
+		kafkaProducer,
+		wp,
+		syncClient,
+	)
+
 	docService := document.NewService(
 		docRepo,
 		userService,
@@ -75,7 +84,7 @@ func main() {
 		redisCache,
 		uint64(config.AppConfig.DocumentSnapshotThreshold),
 		wp,
-		kafkaProducer,
+		notificationService,
 	)
 	eventService := event.NewService(eventRepo, docService)
 
@@ -198,12 +207,16 @@ func main() {
 		[]string{"document.events"},
 	)
 	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to create Kafka consumer")
+		log.Error().Err(err).Msg("Failed to create Kafka consumer")
+		log.Info().Msg("Will use http/grpc to communicate")
 	}
+
 	go func() {
-		err := kafkaConsumer.Start()
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to start Kafka consumer")
+		if kafkaConsumer != nil {
+			err := kafkaConsumer.Start()
+			if err != nil {
+				log.Fatal().Err(err).Msg("failed to start Kafka consumer")
+			}
 		}
 	}()
 
@@ -229,12 +242,17 @@ func main() {
 	log.Info().Msg("Finishing background tasks...")
 	wp.Shutdown()
 
-	log.Info().Msg("Closing kafka...")
-	err = kafkaConsumer.Close()
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to close Kafka consumer")
+	if kafkaConsumer != nil {
+		log.Info().Msg("Closing Kafka consumer...")
+		err = kafkaConsumer.Close()
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to close Kafka consumer")
+		}
 	}
-	kafkaProducer.Close()
+	if kafkaProducer != nil {
+		log.Info().Msg("Closing Kafka producer...")
+		kafkaProducer.Close()
+	}
 
 	log.Info().Msg("Server shutdown complete")
 }

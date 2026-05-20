@@ -3,16 +3,14 @@ package document
 import (
 	"collaborative-markdown-editor/internal/domain"
 	"collaborative-markdown-editor/internal/errors"
+	"collaborative-markdown-editor/internal/notification"
 	"collaborative-markdown-editor/internal/sync"
 	"collaborative-markdown-editor/internal/worker"
 	"collaborative-markdown-editor/redis"
 	"context"
 	defError "errors"
 	"fmt"
-	"strconv"
 	"time"
-
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -36,9 +34,6 @@ type Service interface {
 type UserProvider interface {
 	GetUserByID(ctx context.Context, id uint64) (*domain.User, error)
 }
-type KafkaProvider interface {
-	SendMessage(topic string, key string, message interface{})
-}
 
 type DefaultService struct {
 	repository        DocumentRepository
@@ -47,7 +42,7 @@ type DefaultService struct {
 	cache             *redis.Cache
 	snapshotThreshold uint64
 	workerPool        *worker.WorkerPool
-	kp                KafkaProvider
+	noficationService *notification.Service
 }
 
 func NewService(
@@ -57,7 +52,7 @@ func NewService(
 	cache *redis.Cache,
 	snapshotThreshold uint64,
 	wp *worker.WorkerPool,
-	kp KafkaProvider,
+	noficationService *notification.Service,
 ) Service {
 	return &DefaultService{
 		repository:        repository,
@@ -66,7 +61,7 @@ func NewService(
 		cache:             cache,
 		snapshotThreshold: snapshotThreshold,
 		workerPool:        wp,
-		kp:                kp,
+		noficationService: noficationService,
 	}
 }
 
@@ -454,16 +449,6 @@ func (s *DefaultService) AddCollaborator(
 	}, nil
 }
 
-type NotificationMessage struct {
-	EventID        string `json:"event_id"`
-	Type           string `json:"type"`
-	DocumentID     uint64 `json:"document_id"`
-	TriggeredBy    uint64 `json:"triggered_by"`
-	AffectedUserID uint64 `json:"affected_user_id"`
-	Timestamp      int64  `json:"timestamp"`
-	Role           string `json:"role"`
-}
-
 func (s *DefaultService) ChangeCollaboratorRole(
 	ctx context.Context,
 	docID,
@@ -511,16 +496,7 @@ func (s *DefaultService) ChangeCollaboratorRole(
 	s.cache.IncrementVersion(ctx, versionKey)
 
 	// send notifications
-	message := &NotificationMessage{
-		EventID:        uuid.New().String(),
-		Type:           "document.role_updated",
-		DocumentID:     docID,
-		TriggeredBy:    requesterID,
-		AffectedUserID: targetUserID,
-		Role:           newRole,
-		Timestamp:      time.Now().Unix(),
-	}
-	s.kp.SendMessage("notification-events", strconv.FormatUint(docID, 10), message)
+	s.noficationService.NotifyUserRoleChanged(docID, targetUserID, newRole)
 
 	user, err := s.userProvider.GetUserByID(ctx, targetUserID)
 	if err != nil {
@@ -571,16 +547,7 @@ func (s *DefaultService) RemoveCollaborator(
 	s.cache.IncrementVersion(ctx, versionKey)
 
 	// send notifications
-	message := &NotificationMessage{
-		EventID:        uuid.New().String(),
-		Type:           "document.role_updated",
-		DocumentID:     docID,
-		TriggeredBy:    requesterID,
-		AffectedUserID: targetUserID,
-		Role:           "none",
-		Timestamp:      time.Now().Unix(),
-	}
-	s.kp.SendMessage("notification-events", strconv.FormatUint(docID, 10), message)
+	s.noficationService.NotifyUserRoleChanged(docID, targetUserID, "none")
 
 	return nil
 }
@@ -626,14 +593,7 @@ func (s *DefaultService) DeleteDocument(ctx context.Context, docID uint64, userI
 	})
 
 	// send notifications
-	message := &NotificationMessage{
-		EventID:        uuid.New().String(),
-		Type:           "document.deleted",
-		DocumentID:     docID,
-		Timestamp:      time.Now().Unix(),
-	}
-
-	s.kp.SendMessage("notification-events", strconv.FormatUint(docID, 10), message)
+	s.noficationService.NotifyDocumentDeleted(docID)
 
 	return nil
 }

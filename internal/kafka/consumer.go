@@ -24,6 +24,10 @@ type KafkaConsumer struct {
 }
 
 func NewKafkaConsumer(eventService *event.Service, groupID string, topics []string) (*KafkaConsumer, error) {
+	if config.AppConfig.KafkaBootstrapServers == "" {
+		return nil, errors.New("Kafka is not configured")
+	}
+
 	c, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers":        config.AppConfig.KafkaBootstrapServers,
 		"group.id":                 groupID,
@@ -45,7 +49,7 @@ func NewKafkaConsumer(eventService *event.Service, groupID string, topics []stri
 		// rebalance
 		switch ev := e.(type) {
 		case kafka.AssignedPartitions:
-			log.Info().Msgf("Assigned: %v", ev.Partitions)
+			log.Debug().Msgf("Assigned: %v", ev.Partitions)
 			c.Assign(ev.Partitions)
 
 		case kafka.RevokedPartitions:
@@ -71,6 +75,7 @@ func NewKafkaConsumer(eventService *event.Service, groupID string, topics []stri
 }
 
 func (kc *KafkaConsumer) Start() error {
+	log.Info().Msg("Kafka Consumer is running")
 	for kc.isRunning.Load() {
 		ev := kc.consumer.Poll(100) // 100 ms
 		if ev == nil {

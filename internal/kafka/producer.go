@@ -5,6 +5,7 @@ import (
 	"collaborative-markdown-editor/internal/worker"
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
@@ -17,6 +18,10 @@ type KafkaProducer struct {
 }
 
 func NewKafkaProducer(wp *worker.WorkerPool) (*KafkaProducer, error) {
+	if config.AppConfig.KafkaBootstrapServers == "" {
+		return nil, errors.New("Kafka is not configured")
+	}
+	
 	p, err := kafka.NewProducer(&kafka.ConfigMap{
 		"bootstrap.servers":     config.AppConfig.KafkaBootstrapServers,
 		"enable.idempotence":    true,
