@@ -20,6 +20,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	SyncServerInternal_GetState_FullMethodName          = "/syncserver.SyncServerInternal/GetState"
 	SyncServerInternal_PostSnapshot_FullMethodName      = "/syncserver.SyncServerInternal/PostSnapshot"
 	SyncServerInternal_DeleteDocument_FullMethodName    = "/syncserver.SyncServerInternal/DeleteDocument"
 	SyncServerInternal_PermissionChanged_FullMethodName = "/syncserver.SyncServerInternal/PermissionChanged"
@@ -29,6 +30,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type SyncServerInternalClient interface {
+	GetState(ctx context.Context, in *DocumentIDRequest, opts ...grpc.CallOption) (*DocumentStateResponse, error)
 	PostSnapshot(ctx context.Context, in *DocumentIDRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	DeleteDocument(ctx context.Context, in *DocumentIDRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	PermissionChanged(ctx context.Context, in *PermissionChangedRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
@@ -40,6 +42,16 @@ type syncServerInternalClient struct {
 
 func NewSyncServerInternalClient(cc grpc.ClientConnInterface) SyncServerInternalClient {
 	return &syncServerInternalClient{cc}
+}
+
+func (c *syncServerInternalClient) GetState(ctx context.Context, in *DocumentIDRequest, opts ...grpc.CallOption) (*DocumentStateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DocumentStateResponse)
+	err := c.cc.Invoke(ctx, SyncServerInternal_GetState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *syncServerInternalClient) PostSnapshot(ctx context.Context, in *DocumentIDRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
@@ -76,6 +88,7 @@ func (c *syncServerInternalClient) PermissionChanged(ctx context.Context, in *Pe
 // All implementations must embed UnimplementedSyncServerInternalServer
 // for forward compatibility.
 type SyncServerInternalServer interface {
+	GetState(context.Context, *DocumentIDRequest) (*DocumentStateResponse, error)
 	PostSnapshot(context.Context, *DocumentIDRequest) (*emptypb.Empty, error)
 	DeleteDocument(context.Context, *DocumentIDRequest) (*emptypb.Empty, error)
 	PermissionChanged(context.Context, *PermissionChangedRequest) (*emptypb.Empty, error)
@@ -89,6 +102,9 @@ type SyncServerInternalServer interface {
 // pointer dereference when methods are called.
 type UnimplementedSyncServerInternalServer struct{}
 
+func (UnimplementedSyncServerInternalServer) GetState(context.Context, *DocumentIDRequest) (*DocumentStateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetState not implemented")
+}
 func (UnimplementedSyncServerInternalServer) PostSnapshot(context.Context, *DocumentIDRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method PostSnapshot not implemented")
 }
@@ -117,6 +133,24 @@ func RegisterSyncServerInternalServer(s grpc.ServiceRegistrar, srv SyncServerInt
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&SyncServerInternal_ServiceDesc, srv)
+}
+
+func _SyncServerInternal_GetState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DocumentIDRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SyncServerInternalServer).GetState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SyncServerInternal_GetState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SyncServerInternalServer).GetState(ctx, req.(*DocumentIDRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _SyncServerInternal_PostSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -180,6 +214,10 @@ var SyncServerInternal_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "syncserver.SyncServerInternal",
 	HandlerType: (*SyncServerInternalServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetState",
+			Handler:    _SyncServerInternal_GetState_Handler,
+		},
 		{
 			MethodName: "PostSnapshot",
 			Handler:    _SyncServerInternal_PostSnapshot_Handler,

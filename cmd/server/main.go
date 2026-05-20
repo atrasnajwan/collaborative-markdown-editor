@@ -200,7 +200,6 @@ func main() {
 		}
 	}()
 
-	// Start Kafka consumer
 	kafkaConsumer, err := kafka.NewKafkaConsumer(
 		eventService,
 		"document-sync-group",
@@ -210,7 +209,8 @@ func main() {
 		log.Error().Err(err).Msg("Failed to create Kafka consumer")
 		log.Info().Msg("Will use http/grpc to communicate")
 	}
-
+	
+	// Start Kafka consumer
 	go func() {
 		if kafkaConsumer != nil {
 			err := kafkaConsumer.Start()
