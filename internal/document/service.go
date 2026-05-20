@@ -284,7 +284,11 @@ func (s *DefaultService) handleBackgroundSnapshot(ctx context.Context, docID uin
 	timeoutCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	return s.syncClient.PostDocumentSnapshot(timeoutCtx, docID)
+	state, err := s.syncClient.GetDocumentState(timeoutCtx, docID)
+	if err != nil {
+		return err
+	}
+	return s.CreateDocumentSnapshot(timeoutCtx, docID, state)
 }
 
 func (s *DefaultService) CreateDocumentSnapshot(ctx context.Context, docID uint64, state []byte) error {
