@@ -24,6 +24,7 @@ A real-time collaborative markdown editor backend built with Go. It provides aut
 - **gRPC / Protobuf**: internal service and optional sync server transport
 - **Database**: PostgreSQL with GORM ORM
 - **Cache**: Redis (optional)
+- **Message Queue**: Kafka (optional)
 - **Authentication**: JWT (JSON Web Tokens)
 - **Testing**: testify/mock, testify/assert
 - **Logging**: zerolog
@@ -457,6 +458,9 @@ REDIS_POOL_SIZE=10
 # JWT
 JWT_SECRET=your_jwt_secret_key
 
+# Kafka (Optional)
+KAFKA_BROKERS=localhost:9092         # comma-separated list of Kafka brokers
+
 # Sync Server
 SYNC_ADDRESS=http://localhost:8787   # HTTP address of the external sync server (default)
 SYNC_GRPC_ADDRESS=                # optional gRPC endpoint for sync server
@@ -593,6 +597,199 @@ The server will start on `http://localhost:8080`
 - The external sync server handles real-time collaboration via WebSocket
 - Updates are stored as binary Yjs updates for conflict-free collaborative editing
 - Snapshots contain the full document state at a given sequence point
+
+### Event Processing (Kafka)
+
+When Kafka is configured (via `KAFKA_BROKERS`), the application uses event-driven architecture for scalable, decoupled communication:
+
+#### Kafka Architecture
+
+**Document Events Consumer**
+- **Topic**: `document.events`
+- **Group ID**: `document-sync-group`
+- **Partitions**: Each partition is handled by a dedicated worker goroutine
+- **Consumer Configuration**:
+  - Auto-commit disabled for at-least-once processing
+  - Earliest offset for new consumer groups
+  - Automatic topic creation enabled
+
+**Event Types**
+- `document.updated`: Creates document updates from sync server events (includes base64-encoded Yjs binary)
+- `document.snapshot`: Creates document snapshots from sync server events (includes base64-encoded snapshot binary)
+
+**Event Message Format** (base64-encoded JSON):
+```json
+{
+  "event_id": "uuid",
+  "type": "document.updated|document.snapshot",
+  "document_id": 123,
+  "user_id": 456,
+  "timestamp": 1716288000,
+  "data": "base64_encoded_binary_data"
+}
+```
+
+**Processing Pipeline**
+1. Consumer polls Kafka for messages (100ms timeout)
+2. Messages routed to partition-specific worker channels
+3. Each partition worker processes messages sequentially to maintain ordering
+4. Before processing, event ID is recorded in database (prevents duplicates)
+5. On success, offset is committed to Kafka
+6. On error, message remains unconsumed for retry
+
+#### Notification Events
+
+Collaborator permission changes and document deletions generate notification events:
+
+**Topics**
+- `notification-events`: For role changes and document deletions
+
+**Event Types**
+- `document.role_updated`: User's role changed on a document
+- `document.deleted`: Document was deleted
+
+**Message Format**:
+```json
+// Role update
+{
+  "event_id": "uuid",
+  "type": "document.role_updated",
+  "document_id": 123,
+  "affected_user_id": 456,
+  "role": "editor|viewer|none",
+  "timestamp": 1716288000
+}
+
+// Document deletion
+{
+  "event_id": "uuid",
+  "type": "document.deleted",
+  "document_id": 123,
+  "timestamp": 1716288000
+}
+```
+
+**Dual-Path Strategy**
+- **Kafka Path** (preferred): Events sent to `notification-events` topic for async processing
+- **Fallback** (no Kafka): Events sent directly to sync server via HTTP/gRPC with worker pool
+
+This allows for:
+- Decoupled sync server from document service
+- Scalable notification delivery without blocking
+- Graceful degradation when Kafka is unavailable
+
+### Caching Strategy
+
+Redis is used for performance optimization and cache invalidation:
+
+#### Cache Architecture
+
+**Cache Invalidation by Version**
+- Each user has a version counter for owned documents and shared documents
+- When data changes, version is incremented (not invalidation)
+- Cache keys include version: `docs:u:{user_id}:v:{version}:p:{page}:ps:{page_size}`
+
+#### Cache Keys
+
+**User Documents** (owned by user):
+```
+docs:u:{user_id}:v:{version}:p:{page}:ps:{page_size}
+user:{user_id}:docs:version
+```
+
+**Shared Documents** (shared with user):
+```
+docs:shared:u:{user_id}:v:{version}:p:{page}:ps:{page_size}
+user:{user_id}:docs:shared:version
+```
+
+#### TTL Configuration
+
+- Document lists: Standard TTL (application configured)
+- Version counters: No expiration (user-driven invalidation)
+- Snapshot locks: 30 seconds (prevents concurrent snapshots)
+- Update throttle locks: 60 seconds (throttles cache invalidation per document)
+
+### Locking Mechanisms
+
+The application uses Redis-based distributed locks for concurrency control:
+
+#### Snapshot Lock
+
+**Purpose**: Prevent concurrent snapshot operations on the same document
+
+**Implementation**
+- Lock key: `lock:snapshot:{document_id}`
+- TTL: 30 seconds (auto-release if process crashes)
+- Usage: `SetNX` (set if not exists) for atomic check-and-set
+- Prevents multiple workers from simultaneously fetching state and saving snapshots
+
+**Flow**
+```
+1. Worker attempts: SetNX(lock_key, "processing", 30s)
+2. If locked: return early (another worker processing)
+3. If acquired: Process snapshot
+4. Finally: Delete lock (defer ensures cleanup)
+```
+
+#### Invalidation Cooldown Lock
+
+**Purpose**: Throttle cache invalidation to avoid excessive Redis operations during rapid updates
+
+**Implementation**
+- Lock key: `invalidation_cooldown:d:{document_id}`
+- TTL: 60 seconds
+- Usage: Document-specific to allow parallel updates across documents
+- Limits invalidation to once per minute per document
+
+**Benefits**
+- Reduces thundering herd on cache invalidation
+- Prevents rapid consecutive cache clears
+- Maintains eventual consistency with minimal cache thrashing
+
+**Flow**
+```
+1. On document update: SetNX(cooldown_key, "1", 60s)
+2. If first time (isNew=true): Invalidate collaborators' cache versions
+3. If already locked: Skip invalidation (will happen in next update)
+4. Ensures all collaborators see updated doc eventually
+```
+
+#### Worker Pool Execution
+
+Locks and cache operations are executed asynchronously via worker pool:
+- **Worker Pool**: Configurable background task executor (default: 5 workers)
+- **Context**: Background context with timeout (typically 5-10 seconds)
+- **Error Handling**: Logged but not propagated to user (best-effort)
+- **Blocking**: Non-blocking submission, returns immediately
+
+**Use Cases**
+- Cache invalidation on document update
+- Snapshot creation with state fetch
+- Permission change notifications
+- Document deletion cleanup
+
+### Cache Invalidation Workflow
+
+**On Document Update**
+1. Update persisted to database
+2. Worker pool task submitted:
+   - Check cooldown lock
+   - If new: Increment version for all collaborators (owner + editors + viewers)
+   - Cache keys with old version automatically stale
+   - Next read fetches fresh data from DB
+
+**On Collaborator Change**
+1. Role change/add/remove persisted
+2. Worker pool task submitted:
+   - Increment target user's shared documents version
+   - If adding: Also invalidate owner's shared list cache
+
+**On Document Deletion**
+1. Document soft-deleted (or marked)
+2. Worker pool task submitted:
+   - Invalidate all collaborators' caches
+   - Notify sync server of deletion
 
 ## Testing
 

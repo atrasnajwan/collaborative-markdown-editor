@@ -43,6 +43,8 @@ type Config struct {
 	FrontendAddress string
 
 	DocumentSnapshotThreshold int
+
+	KafkaBootstrapServers string
 }
 
 // Global application configuration
@@ -93,6 +95,7 @@ func LoadConfig() {
 		InternalSecret:            getEnv("INTERNAL_SECRET", "collab-internal-secret"),
 		FrontendAddress:           getEnv("FRONTEND_ADDRESS", "https://production-frontend.com"),
 		WorkerPollSize:            getEnv("WORKER_POOL_SIZE", 5),
+		KafkaBootstrapServers:     getEnv("KAFKA_BROKERS", ""),
 	}
 }
 

@@ -29,7 +29,8 @@ type SyncClient struct {
 }
 
 type Client interface {
-	FetchDocumentState(ctx context.Context, docID uint64) ([]byte, error)
+	GetDocumentState(ctx context.Context, docID uint64) ([]byte, error)
+	PostDocumentSnapshot(ctx context.Context, docID uint64) ([]byte, error)
 	UpdateUserPermission(ctx context.Context, docID uint64, userID uint64, role string) error
 	RemoveDocument(ctx context.Context, docID uint64) error
 }
@@ -107,8 +108,36 @@ func (s *SyncClient) doRequest(ctx context.Context, method, path string, headers
 	return resp, nil
 }
 
+// POST /internal/documents/:id/snapshot
+func (s *SyncClient) PostDocumentSnapshot(ctx context.Context, docID uint64) error {
+	if s.grpcClient != nil {
+		// use gRPC transport
+		md := metadata.Pairs("x-internal-secret", config.AppConfig.SyncServerSecret)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+		_, err := s.grpcClient.PostSnapshot(ctx, &syncpb.DocumentIDRequest{Id: docID})
+		if err != nil {
+			log.Error().Err(err).Uint64("doc_id", docID).Msg("gRPC call to sync server failed")
+			return err
+		}
+		return nil
+	}
+
+	path := fmt.Sprintf("/internal/documents/%d/snapshot", docID)
+	headers := map[string]string{
+		"Content-Type": "application/json",
+	}
+	resp, err := s.doRequest(ctx, http.MethodPost, path, headers, nil)
+	if err != nil {
+		log.Error().Err(err).Uint64("doc_id", docID).Msg("failed to request snapshot from sync server")
+		return err
+	}
+	defer resp.Body.Close()
+
+	return nil
+}
+
 // GET /internal/documents/:id/state
-func (s *SyncClient) FetchDocumentState(ctx context.Context, docID uint64) ([]byte, error) {
+func (s *SyncClient) GetDocumentState(ctx context.Context, docID uint64) ([]byte, error) {
 	if s.grpcClient != nil {
 		// use gRPC transport
 		md := metadata.Pairs("x-internal-secret", config.AppConfig.SyncServerSecret)

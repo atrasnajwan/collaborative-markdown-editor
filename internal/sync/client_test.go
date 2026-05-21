@@ -36,8 +36,8 @@ func TestSyncClient_HTTPFallback(t *testing.T) {
 		}
 
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/internal/documents/123/state":
-			w.Write([]byte("snapshot-bytes"))
+		case r.Method == http.MethodPost && r.URL.Path == "/internal/documents/123/snapshot":
+			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPut && r.URL.Path == "/internal/documents/123/permission":
 			var req UpdateRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -67,12 +67,9 @@ func TestSyncClient_HTTPFallback(t *testing.T) {
 		t.Fatal("expected grpcClient to be nil when no address configured")
 	}
 
-	state, err := client.FetchDocumentState(context.Background(), 123)
+	err := client.PostDocumentSnapshot(context.Background(), 123)
 	if err != nil {
-		t.Fatalf("FetchDocumentState returned error: %v", err)
-	}
-	if string(state) != "snapshot-bytes" {
-		t.Fatalf("unexpected state: %s", state)
+		t.Fatalf("PostDocumentSnapshot returned error: %v", err)
 	}
 
 	if err := client.UpdateUserPermission(context.Background(), 123, 55, "editor"); err != nil {
@@ -89,12 +86,12 @@ type grpcMock struct {
 	syncpb.UnimplementedSyncServerInternalServer
 }
 
-func (g *grpcMock) GetState(ctx context.Context, req *syncpb.DocumentIDRequest) (*syncpb.DocumentStateResponse, error) {
+func (g *grpcMock) PostSnapshot(ctx context.Context, req *syncpb.DocumentIDRequest) (*emptypb.Empty, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok || len(md.Get("x-internal-secret")) == 0 || md.Get("x-internal-secret")[0] != config.AppConfig.SyncServerSecret {
 		return nil, status.Error(codes.Unauthenticated, "bad secret")
 	}
-	return &syncpb.DocumentStateResponse{State: []byte("grpc-snapshot")}, nil
+	return &emptypb.Empty{}, nil
 }
 
 func (g *grpcMock) DeleteDocument(ctx context.Context, req *syncpb.DocumentIDRequest) (*emptypb.Empty, error) {
@@ -145,12 +142,9 @@ func TestSyncClient_GRPC(t *testing.T) {
 		t.Fatal("expected grpcClient to be non-nil when address set")
 	}
 
-	state, err := client.FetchDocumentState(context.Background(), 123)
+	err := client.PostDocumentSnapshot(context.Background(), 123)
 	if err != nil {
-		t.Fatalf("FetchDocumentState failed: %v", err)
-	}
-	if string(state) != "grpc-snapshot" {
-		t.Fatalf("unexpected grpc state: %s", state)
+		t.Fatalf("PostDocumentSnapshot failed: %v", err)
 	}
 
 	if err := client.UpdateUserPermission(context.Background(), 123, 55, "owner"); err != nil {

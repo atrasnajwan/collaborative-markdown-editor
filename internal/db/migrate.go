@@ -18,6 +18,7 @@ func Migrate() {
 		&domain.DocumentSnapshot{},
 		&domain.DocumentVersion{},
 		&domain.DocumentCollaborator{},
+		&domain.Event{},
 	)
 
 	if err != nil {

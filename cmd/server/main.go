@@ -4,7 +4,10 @@ import (
 	"collaborative-markdown-editor/internal/config"
 	"collaborative-markdown-editor/internal/db"
 	"collaborative-markdown-editor/internal/document"
+	"collaborative-markdown-editor/internal/event"
+	"collaborative-markdown-editor/internal/kafka"
 	"collaborative-markdown-editor/internal/middleware"
+	"collaborative-markdown-editor/internal/notification"
 	"collaborative-markdown-editor/internal/sync"
 	"collaborative-markdown-editor/internal/user"
 	"collaborative-markdown-editor/internal/worker"
@@ -53,12 +56,26 @@ func main() {
 	// Initialize repository
 	userRepo := user.NewRepository(db.AppDb)
 	docRepo := document.NewRepository(db.AppDb)
+	eventRepo := event.NewRepository(db.AppDb)
+
 	// Initialize service
 	userService := user.NewService(userRepo, redisCache)
 	syncClient := sync.NewSyncClient()
 	defer func() {
 		_ = syncClient.Close()
 	}()
+
+	kafkaProducer, err := kafka.NewKafkaProducer(wp)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to initialize Kafka Producer")
+		log.Warn().Msg("Will use http/grpc to communicate")
+	}
+
+	notificationService := notification.NewService(
+		kafkaProducer,
+		wp,
+		syncClient,
+	)
 
 	docService := document.NewService(
 		docRepo,
@@ -67,7 +84,10 @@ func main() {
 		redisCache,
 		uint64(config.AppConfig.DocumentSnapshotThreshold),
 		wp,
+		notificationService,
 	)
+	eventService := event.NewService(eventRepo, docService)
+
 	// Initialize handler
 	docHandler := document.NewHandler(docService)
 	userHandler := user.NewHandler(userService)
@@ -169,10 +189,36 @@ func main() {
 	grpcSrv := grpcserver.NewServer(docService, config.AppConfig.InternalSecret)
 	grpcAddr := fmt.Sprintf(":%s", config.AppConfig.GRPCPort)
 	log.Info().Msgf("gRPC server listening on port %s", config.AppConfig.GRPCPort)
-	serverInstance, _, err := grpcSrv.Start(grpcAddr)
+	serverInstance, listener, err := grpcSrv.Start(grpcAddr)
 	if err != nil {
-		log.Fatal().Err(err).Msg("gRPC server failed to start")
+		log.Fatal().Err(err).Msgf("failed to listen %s", grpcAddr)
 	}
+	go func() {
+		err := serverInstance.Serve(listener)
+		if err != nil {
+			log.Fatal().Err(err).Msg("gRPC server failed to start")
+		}
+	}()
+
+	kafkaConsumer, err := kafka.NewKafkaConsumer(
+		eventService,
+		"document-sync-group",
+		[]string{"document.events"},
+	)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to create Kafka consumer")
+		log.Info().Msg("Will use http/grpc to communicate")
+	}
+	
+	// Start Kafka consumer
+	go func() {
+		if kafkaConsumer != nil {
+			err := kafkaConsumer.Start()
+			if err != nil {
+				log.Fatal().Err(err).Msg("failed to start Kafka consumer")
+			}
+		}
+	}()
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
@@ -195,6 +241,18 @@ func main() {
 
 	log.Info().Msg("Finishing background tasks...")
 	wp.Shutdown()
+
+	if kafkaConsumer != nil {
+		log.Info().Msg("Closing Kafka consumer...")
+		err = kafkaConsumer.Close()
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to close Kafka consumer")
+		}
+	}
+	if kafkaProducer != nil {
+		log.Info().Msg("Closing Kafka producer...")
+		kafkaProducer.Close()
+	}
 
 	log.Info().Msg("Server shutdown complete")
 }
